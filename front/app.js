@@ -155,10 +155,11 @@
     const maxN = qaoaAll.reduce((m, r) => Math.max(m, r.n), 0);
     const maxNrec = qaoaAll.filter((r) => r.n === maxN);
     const maxNSeries = [...new Set(maxNrec.map((r) => seriesOfArtifact(r.art).label))];
+    const maxNProbe = maxNrec.every((r) => r.it !== null && r.it <= 1) ? ' · 1-iteration memory probe' : '';
     const hosts = new Set(A.map((a) => a.host));
     const tiles = [
       fastest && { label: 'Fastest QAOA solve · 8 assets', value: fmtDur(fastest.t, true), note: `${fastest.s.label}${base && base.s.id !== fastest.s.id ? ` · ${(base.t / fastest.t).toFixed(1)}× faster than the June baseline` : ''}` },
-      { label: 'Largest portfolio simulated', value: `${maxN}<small>assets</small>`, note: `2<sup>${maxN}</sup> = ${Math.pow(2, maxN).toLocaleString('en')} amplitudes · ${maxNSeries.slice(0, 2).join(', ')}${maxNSeries.length > 2 ? '…' : ''}` },
+      { label: 'Largest portfolio simulated', value: `${maxN}<small>assets</small>`, note: `2<sup>${maxN}</sup> = ${Math.pow(2, maxN).toLocaleString('en')} amplitudes · ${maxNSeries.slice(0, 2).join(', ')}${maxNSeries.length > 2 ? '…' : ''}${maxNProbe}` },
       bestQ && { label: 'Best QAOA quality · 8 assets', value: fmtRatio(bestQ.ratio), note: `${bestQ.hits}/${bestQ.runs} instances solved to optimum · ${bestQ.s.label}` },
       { label: 'QAOA solves recorded', value: qaoaAll.length.toLocaleString('en'), note: `${A.length} artifacts · ${configKeys.length} host·backend configs · ${hosts.size} host${hosts.size > 1 ? 's' : ''}` },
     ].filter(Boolean);
@@ -357,7 +358,7 @@
     rows.sort((a, b) => String(b.created).localeCompare(String(a.created)));
     const pill = (st) => `<span class="pill ${st === 'ok' ? 'ok' : st === 'aborted' ? 'warn' : 'bad'}">${esc(st)}</span>`;
     const date = (c) => (c && c.length >= 13 ? `${c.slice(0, 4)}-${c.slice(4, 6)}-${c.slice(6, 8)} ${c.slice(9, 11)}:${c.slice(11, 13)}` : esc(c));
-    $('#runs-table').innerHTML = `<table><thead><tr><th>Created (UTC)</th><th>Host · backend</th><th>Suite</th><th class="num">n</th><th>QAOA settings</th><th class="num">Repeats</th><th class="num">Wall</th><th class="num">Peak mem</th><th>Status</th><th>Artifact / notes</th></tr></thead><tbody>${rows.map((r) => `<tr><td class="mono">${date(r.created)}</td><td><span class="tag">${keyHtml(r.s)}${esc(r.s.label)}</span></td><td>${esc(r.suite)}</td><td class="num">${esc(r.n)}</td><td class="mono">${esc(r.preset)}</td><td class="num">${esc(r.repeats)}</td><td class="num">${r.wall ? fmtDur(r.wall, true) : '—'}</td><td class="num">${r.mem ? fmtBytes(r.mem) : '—'}</td><td>${pill(r.status)}${r.conc ? ' <span class="pill warn" title="Ran while another benchmark used the host; timings are not isolated">shared</span>' : ''}</td><td class="mono" title="${esc(r.notes)}">${esc(r.file)}${r.notes ? `<br><span style="font-family:var(--sans)">${esc(r.notes)}</span>` : ''}</td></tr>`).join('')}</tbody></table>`;
+    $('#runs-table').innerHTML = `<table><thead><tr><th>Created (UTC)</th><th>Host · backend</th><th>Suite</th><th class="num">n</th><th>QAOA settings</th><th class="num">Repeats</th><th class="num">Wall</th><th class="num" title="RTX 3080: process max RSS. DGX Spark: whole unified pool in use (includes ~4 GB of other processes).">Peak mem (RSS · pool)</th><th>Status</th><th>Artifact / notes</th></tr></thead><tbody>${rows.map((r) => `<tr><td class="mono">${date(r.created)}</td><td><span class="tag">${keyHtml(r.s)}${esc(r.s.label)}</span></td><td>${esc(r.suite)}</td><td class="num">${esc(r.n)}</td><td class="mono">${esc(r.preset)}</td><td class="num">${esc(r.repeats)}</td><td class="num">${r.wall ? fmtDur(r.wall, true) : '—'}</td><td class="num">${r.mem ? fmtBytes(r.mem) : '—'}</td><td>${pill(r.status)}${r.conc ? ' <span class="pill warn" title="Ran while another benchmark used the host; timings are not isolated">shared</span>' : ''}</td><td class="mono" title="${esc(r.notes)}">${esc(r.file)}${r.notes ? `<br><span style="font-family:var(--sans)">${esc(r.notes)}</span>` : ''}</td></tr>`).join('')}</tbody></table>`;
   }
 
   /* ---------- table views (accessibility: every chart has its numbers) ---------- */

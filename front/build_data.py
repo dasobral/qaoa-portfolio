@@ -59,10 +59,15 @@ def _campaign(created: str) -> str:
 
 def _record(rec: Dict[str, Any], artifact: int) -> Dict[str, Any]:
     meta = rec.get("metadata") or {}
-    is_qaoa = rec.get("solver_name") == "qaoa"
+    solver = rec.get("solver_name")
+    is_qaoa = solver == "qaoa"
+    if solver == "brute_force" and (rec.get("num_assets") or 0) > 20:
+        # The Rust brute force refuses n > 20: such records come from a campaign
+        # wrapper's NumPy enumeration, so their timings are not Rust timings.
+        solver = "exact_enum"
     return {
         "a": artifact,
-        "s": rec.get("solver_name"),
+        "s": solver,
         "n": rec.get("num_assets"),
         "r": rec.get("approximation_ratio"),
         "t": rec.get("elapsed_ms"),
