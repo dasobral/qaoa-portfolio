@@ -145,7 +145,7 @@ def circuit():
     qml.Hadamard(0)
     return qml.probs(wires=range(4))
 
-print(circuit())          # [0.25 x8] means the CUDA path is alive
+print(circuit())          # 0.5 on two of the 16 basis states (0 and 8) means the CUDA path is alive
 EOF
 ```
 
