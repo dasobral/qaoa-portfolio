@@ -251,6 +251,14 @@ from qaoa_portfolio.benchmarks import (
 )
 from qaoa_portfolio.quantum_backend import QAOAConfig
 
+import argparse
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--assets", type=int, default=8,
+                    help="number of candidate assets (n)")
+parser.add_argument("--repeats", type=int, default=10)
+args = parser.parse_args()
+
 BACKEND = "lightning.gpu"
 
 # 1) Device smoke test — fail fast if CUDA is broken.
@@ -266,7 +274,7 @@ except Exception as exc:  # torch is optional for the benchmark itself
 # 2) Same instance settings and QAOA preset as the 3080 quality run.
 qaoa = QAOAConfig(backend=BACKEND, layers=1, optimizer="adam",
                   max_iterations=60, num_restarts=2)
-config = BenchmarkConfig(num_assets=8, target_assets=4, repeats=10,
+config = BenchmarkConfig(num_assets=args.assets, target_assets=4, repeats=args.repeats,
                          seed=42, qaoa=qaoa)
 solvers = ("brute_force", "simulated_annealing", "markowitz", "random", "qaoa")
 
@@ -305,8 +313,30 @@ experiment is meaningful if `lightning.gpu` cuts the QAOA wall time while
 keeping the quality ratio where it was — and whether that finally beats the
 classical baselines in practice.
 
-For the scaling picture, raise `num_assets` (12, 16, 20 — the exact-simulation
-ceiling) and re-run; each is a fresh, seeded, paired comparison.
+### 7.1 Running the full sweep (n = 8 → 20)
+
+```bash
+python spark_example.py --assets 8     # reference point (3080 CPU: 23.2 s)
+python spark_example.py --assets 12
+python spark_example.py --assets 16
+python spark_example.py --assets 20    # exact-simulation ceiling
+```
+
+Each run is a fresh, seeded, paired comparison and writes its own
+`results/benchmarks/spark-quality-*.json` artifact. Memory grows roughly
+exponentially in n (the state space is 2^n):
+
+| n | Python peak (3080 `tracemalloc`) | incl. CUDA context + cuStateVec workspace |
+|---|---|---|
+| 8 | ~3 MB | well under 1 GB — agent sessions irrelevant |
+| 12 | ~50 MB (≈ doubles per added asset) | < 1 GB — agent sessions irrelevant |
+| 16 | ~680 MB | < 2 GB — suspend agent sessions for clean timings |
+| 20 | **~16.2 GB** | ~20 GB — **suspend agent sessions** |
+
+Monitor while a run is in flight: `free -g` (unified pool) and
+`nvidia-smi` (SM utilization; memory counters may read N/A on GB10). If
+you OOM at n = 20, lower `--repeats` (or `max_iterations` in the script)
+and step back to n = 16.
 
 ## 8. RAM budgeting (read before big runs)
 
@@ -320,6 +350,10 @@ ceiling) and re-run; each is a fresh, seeded, paired comparison.
 - Run one solve at a time; no parallel `pytest` or second benchmark.
 - Monitor with `free -g` (the unified pool) and `nvidia-smi` (SM
   utilization; memory counters are shared on GB10 and may read N/A).
+- Why the full pool helps: n = 20 needs ~20 GB of the shared pool
+  (OOM headroom), and an active agent session also competes for the same
+  LPDDR5x bandwidth the statevector reads/writes — a quiet host makes
+  timings more stable, not just safer.
 - If OOM at n = 20: lower `repeats`/`max_iterations`, or step down to
   n = 16 first.
 
