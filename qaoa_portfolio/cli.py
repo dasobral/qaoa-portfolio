@@ -67,24 +67,15 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     solvers = tuple(item.strip() for item in args.solvers.split(",") if item.strip())
 
     try:
-        qaoa_config = None
-        qaoa_overrides = {
-            "layers": args.qaoa_layers,
-            "max_iterations": args.qaoa_iterations,
-            "num_restarts": args.qaoa_restarts,
-            "optimizer": args.qaoa_optimizer,
-        }
-        if any(value is not None for value in qaoa_overrides.values()):
-            from .quantum_backend import QAOAConfig
-
-            qaoa_config = QAOAConfig(
-                **{
-                    key: value
-                    for key, value in qaoa_overrides.items()
-                    if value is not None
-                }
-            )
-
+        qaoa_config = benchmarks.with_qaoa_overrides(
+            {
+                "layers": args.qaoa_layers,
+                "max_iterations": args.qaoa_iterations,
+                "num_restarts": args.qaoa_restarts,
+                "optimizer": args.qaoa_optimizer,
+                "backend": args.qaoa_backend,
+            }
+        )
         config = benchmarks.BenchmarkConfig(
             num_assets=args.assets,
             target_assets=args.target or max(1, args.assets // 2),
@@ -267,6 +258,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="QAOA classical optimizer (default: adam).",
+    )
+    benchmark.add_argument(
+        "--qaoa-backend",
+        type=str,
+        default=None,
+        help="PennyLane device for QAOA (default: benchmark preset, "
+        "default.qubit; e.g. lightning.qubit, lightning.gpu).",
     )
     benchmark.add_argument("--symbols", dest="symbols", type=str, default=None)
     benchmark.add_argument("--start-date", type=str, default=None)

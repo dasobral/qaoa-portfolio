@@ -69,6 +69,20 @@ _DEFAULT_BENCH_QAOA = QAOAConfig(
 )
 
 
+def with_qaoa_overrides(overrides: Dict[str, Any]) -> Optional[QAOAConfig]:
+    """Return the benchmark QAOA preset with the given overrides applied.
+
+    Unspecified fields keep the preset's values, so partial CLI overrides
+    never silently replace the preset with full-parameter defaults.
+    Returns ``None`` when nothing is overridden, so callers can keep the
+    shared preset untouched.
+    """
+    changes = {key: value for key, value in overrides.items() if value is not None}
+    if not changes:
+        return None
+    return replace(_DEFAULT_BENCH_QAOA, **changes)
+
+
 @dataclass(frozen=True)
 class BenchmarkConfig:
     """Configuration shared by all benchmark suites."""
