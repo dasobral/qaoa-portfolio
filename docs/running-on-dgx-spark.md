@@ -55,12 +55,11 @@ Key consequences:
   no separate GPU HBM: everything (Python state, CUDA context, PyTorch
   allocator, *and the locally deployed coding agent*) competes for the same
   pool. See §7 before running anything big.
-- The repo's backend allowlist (`QAOAParams.SUPPORTED_BACKENDS` in
-  `qaoa_portfolio/params.py`) currently only accepts `default.qubit` and
-  `lightning.qubit`, and the `qaoa-portfolio benchmark` CLI has no
-  `--backend` flag yet — so the GPU run is driven by the small script in §7
-  (it reuses the Phase 5 harness, keeping results directly comparable with
-  the 3080 artifacts in `docs/benchmarks.md`).
+- The QAOA device is selected per run: `lightning.gpu` is in
+  `QAOAParams.SUPPORTED_BACKENDS`, and the `benchmark` CLI exposes it via
+  `--qaoa-backend` (§7). The GPU run reuses the Phase 5 harness, keeping
+  results directly comparable with the 3080 artifacts in
+  `docs/benchmarks.md`.
 - The Spark has **no global PyTorch**, and installing one host-wide is not
   recommended. The runtime gets PyTorch from the NGC base image (§4). The
   QAOA benchmark itself does not need torch at runtime — LightningGPU's
@@ -159,18 +158,17 @@ docker commit <container-id> qopo-spark:spark
 
 ## 5. Enable `lightning.gpu` in QOPO
 
-**Option A — one-line allowlist change** (recommended; it is the natural
-first commit of this branch):
+Done on this branch:
 
-```diff
---- a/qaoa_portfolio/params.py
-+++ b/qaoa_portfolio/params.py
--    SUPPORTED_BACKENDS = ("default.qubit", "lightning.qubit")
-+    SUPPORTED_BACKENDS = ("default.qubit", "lightning.qubit", "lightning.gpu")
-```
+- `lightning.gpu` is in `QAOAParams.SUPPORTED_BACKENDS`
+  (`qaoa_portfolio/params.py`, commit `ff1c110`).
+- The CLI exposes the device as `--qaoa-backend` (commit `10a4a1d`), and
+  any `--qaoa-*` override is merged into the benchmark preset
+  (`benchmarks.with_qaoa_overrides`) instead of replacing it with
+  full-parameter defaults.
 
-**Option B — no repo change:** the driver script below patches the
-allowlist in memory before the backend module is first imported.
+No in-memory patching is required anymore; the example script in §7 keeps
+a harmless no-op patch so it still runs on older revisions.
 
 ## 6. Alternative: host venv (no container)
 
@@ -206,20 +204,32 @@ same, and the torch introspection in the example script is optional there
 
 ## 7. Run the example: QAOA on the GB10 vs classical baselines
 
-Save as `spark_example.py` in the repo root, then run it in the section 4
-container (with the env already built):
+Canonical form — the project's own benchmark CLI, the same harness that
+produced all the 3080 numbers in `docs/benchmarks.md`:
 
 ```bash
-uv run python spark_example.py
+uv run qaoa-portfolio benchmark --suite quality \
+  --qaoa-backend lightning.gpu --assets 8 --repeats 10
 ```
 
-If you committed the image (`qopo-spark:spark`), the whole run is one line:
+(run inside the section 4 container; on the host venv, in the activated
+environment). This runs the benchmark preset (1 layer, adam, 60
+iterations, 2 restarts) with only the device swapped, and writes
+`results/benchmarks/quality-*.json`.
+
+If you committed the image (`qopo-spark:spark`), the whole run is one
+line:
 
 ```bash
 docker run --rm --gpus all -v $PWD:/work -w /work \
   -e UV_PROJECT_ENVIRONMENT=/opt/qaoa-env \
-  qopo-spark:spark uv run python spark_example.py
+  qopo-spark:spark uv run qaoa-portfolio benchmark \
+  --suite quality --qaoa-backend lightning.gpu --assets 8 --repeats 10
 ```
+
+`spark_example.py` below is an optional minimal driver (the same harness
+call, plus a device smoke test and per-run significance output) — handy
+when you want the raw harness calls visible.
 
 ```python
 """DGX Spark example: QAOA on the GPU vs classical baselines.
@@ -230,9 +240,10 @@ RTX 3080 baseline artifacts.
 """
 from __future__ import annotations
 
-# Option B from docs/running-on-dgx-spark.md section 5: enable the GPU
-# device without a repo change. Must run before qaoa_portfolio.quantum_backend
-# (or .benchmarks, which imports it) is first imported.
+# lightning.gpu is in the allowlist on this branch (docs section 5); the
+# patch below is a no-op safety net so the script also runs on older
+# revisions. It must execute before qaoa_portfolio.quantum_backend (or
+# .benchmarks, which imports it) is first imported.
 import qaoa_portfolio.params as _params
 
 if "lightning.gpu" not in _params.QAOAParams.SUPPORTED_BACKENDS:
@@ -316,14 +327,16 @@ classical baselines in practice.
 ### 7.1 Running the full sweep (n = 8 → 20)
 
 ```bash
-python spark_example.py --assets 8     # reference point (3080 CPU: 23.2 s)
-python spark_example.py --assets 12
-python spark_example.py --assets 16
-python spark_example.py --assets 20    # exact-simulation ceiling
+uv run qaoa-portfolio benchmark --suite quality --qaoa-backend lightning.gpu --assets 8  --repeats 10
+uv run qaoa-portfolio benchmark --suite quality --qaoa-backend lightning.gpu --assets 12 --repeats 10
+uv run qaoa-portfolio benchmark --suite quality --qaoa-backend lightning.gpu --assets 16 --repeats 10
+uv run qaoa-portfolio benchmark --suite quality --qaoa-backend lightning.gpu --assets 20 --repeats 10
 ```
 
 Each run is a fresh, seeded, paired comparison and writes its own
-`results/benchmarks/spark-quality-*.json` artifact. Memory grows roughly
+`results/benchmarks/quality-*.json` artifact (equivalently, the built-in
+scaling suite does the whole sweep in one run: `--suite scaling
+--asset-counts 4,8,12,16,20`). Memory grows roughly
 exponentially in n (the state space is 2^n):
 
 | n | Python peak (3080 `tracemalloc`) | incl. CUDA context + cuStateVec workspace |
@@ -335,7 +348,7 @@ exponentially in n (the state space is 2^n):
 
 Monitor while a run is in flight: `free -g` (unified pool) and
 `nvidia-smi` (SM utilization; memory counters may read N/A on GB10). If
-you OOM at n = 20, lower `--repeats` (or `max_iterations` in the script)
+you OOM at n = 20, lower `--repeats` (or `--qaoa-iterations`)
 and step back to n = 16.
 
 ## 8. RAM budgeting (read before big runs)
@@ -409,9 +422,9 @@ Decision guide:
   artifact schema already matches (`results/benchmarks/spark-quality-*.json`
   vs `quality-*.json`).
 - Suggested follow-up commits on `feature/runtime-spark`:
-  1. One-line `params.py` allowlist change (§5 option A).
-  2. `--backend` flag on `qaoa-portfolio benchmark` so the CLI can drive the
-     GPU device directly.
+  1. `params.py` allowlist — done (`ff1c110`).
+  2. `--qaoa-backend` flag on `qaoa-portfolio benchmark` (with preset-aware
+     override merging) — done (`10a4a1d`).
   3. Add the measured Spark numbers (n = 8 / 12 / 16 / 20) to
      `docs/benchmarks.md` and the README headline table.
   4. (If needed) cuQuantum-based backend prototype, following section 9.
