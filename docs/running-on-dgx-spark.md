@@ -1,10 +1,10 @@
 # Running QOPO on the NVIDIA DGX Spark (GB10)
 
-Run the QAOA side of the benchmark on the Spark's GPU — using NVIDIA's
-ready-to-run CUDA stack for GB10 — and compare it against the classical
-baselines (brute force, simulated annealing, Markowitz) to answer the open
-question: does QAOA actually gain anything over standard optimization
-algorithms on this hardware?
+Run the QAOA side of the benchmark on the Spark's GPU — inside an NGC
+container built on NVIDIA's ready-to-run stack for GB10 — and compare it
+against the classical baselines (brute force, simulated annealing,
+Markowitz) to answer the open question: does QAOA actually gain anything
+over standard optimization algorithms on this hardware?
 
 ## 1. Does QOPO need custom CUDA kernels? No.
 
@@ -22,12 +22,15 @@ compile or ship any CUDA code.**
 So this is not a "port the kernels to GB10" task — it is a
 "run the code as-is in the right environment" task. The only GB10
 compatibility question is whether the *prebuilt* GPU stack you pick
-(PyTorch for LightningGPU, cuQuantum wheels) was built to run on
-**sm_121** (GB10's Blackwell compute capability). NVIDIA's ready-to-run
-resources exist precisely to remove that burden: the DGXOS host image ships
-CUDA 12.8 plus a GB10-tuned PyTorch, and NVIDIA's prebuilt wheels
-(LightningGPU aarch64 wheels, cuQuantum `-cu12` wheels) already embed
-Blackwell cubins (verified: cuStateVec 1.15 ships `sm_100` + `sm_120`
+(the LightningGPU wheel's `-cu12` libraries, or the cuQuantum wheels) was
+built to run on **sm_121** (GB10's Blackwell compute capability).
+NVIDIA's ready-to-run resources exist precisely to remove that burden:
+the LightningGPU aarch64 wheels pull their whole CUDA stack from PyPI as
+prebuilt aarch64 `-cu12` wheels (`custatevec-cu12` plus
+`nvidia-cublas/cusparse/cuda-runtime/nvjitlink-cu12`), and the GB10-tuned
+PyTorch used for pre-flight checks and introspection comes from NVIDIA's
+NGC PyTorch image (`nvcr.io/nvidia/pytorch:26.09-py3`), not from a host
+install. Verified: cuStateVec 1.15 embeds `sm_100` + `sm_120` Blackwell
 targets, and sm_120 SASS is binary-compatible with sm_121 within the 12.x
 major version).
 
@@ -40,7 +43,7 @@ software must be built and run:
 |---|---|---|
 | CPU arch | x86_64 | **aarch64** (ARM) — no reusable envs or wheels |
 | GPU | Ampere, compute capability 8.6 | **GB10 Grace Blackwell, sm_121**, 128 GB *unified* CPU+GPU LPDDR5x |
-| CUDA stack | system CUDA 12.0 | **CUDA 12.8 preinstalled** on DGXOS, plus a GB10-tuned PyTorch |
+| CUDA stack | system CUDA 12.0 | **CUDA 12.8** on DGXOS; the GB10-tuned PyTorch comes from the **NGC PyTorch image** (no host torch install) |
 | QAOA device | `default.qubit` / `lightning.qubit` (CPU) | **`lightning.gpu`** (PennyLane LightningGPU, CUDA) |
 
 Key consequences:
@@ -55,49 +58,81 @@ Key consequences:
 - The repo's backend allowlist (`QAOAParams.SUPPORTED_BACKENDS` in
   `qaoa_portfolio/params.py`) currently only accepts `default.qubit` and
   `lightning.qubit`, and the `qaoa-portfolio benchmark` CLI has no
-  `--backend` flag yet — so the GPU run is driven by the small script in §6
+  `--backend` flag yet — so the GPU run is driven by the small script in §7
   (it reuses the Phase 5 harness, keeping results directly comparable with
   the 3080 artifacts in `docs/benchmarks.md`).
+- The Spark has **no global PyTorch**, and installing one host-wide is not
+  recommended. The runtime gets PyTorch from the NGC base image (§4). The
+  QAOA benchmark itself does not need torch at runtime — LightningGPU's
+  CUDA dependencies are prebuilt aarch64 `-cu12` wheels (§1).
 
 ## 3. Pre-flight checks on the Spark (5 min)
 
 ```bash
 nvidia-smi        # GB10 (Grace Blackwell) + driver
-nvcc --version    # CUDA 12.8 on DGXOS
 uname -m          # aarch64
-python3 - <<'EOF'
+docker --version  # Docker + NVIDIA runtime (DGXOS default)
+```
+
+The Spark has **no global PyTorch**, and installing one host-wide is not
+recommended. Run the PyTorch / sm_121 pre-flight *inside* the NGC PyTorch
+image that the runtime is built on:
+
+```bash
+# 1) Verify the tag has an arm64 entry:
+docker manifest inspect nvcr.io/nvidia/pytorch:26.09-py3
+
+# 2) Check the GB10 compute capability from inside the image:
+docker run --rm --gpus all nvcr.io/nvidia/pytorch:26.09-py3 python - <<'EOF'
 import torch
 print(torch.__version__, torch.version.cuda)
 print("sm:", torch.cuda.get_device_capability(0))   # expect (12, 1)
 EOF
 ```
 
-DGXOS ships a PyTorch build tuned for GB10. If `torch` is missing, install
-an **aarch64 CUDA build that includes sm_121 (Blackwell consumer) kernels**
-before anything else — LightningGPU fails at runtime without it.
+If `sm` does not report `(12, 1)`, stop — nothing GPU-side in this guide
+will work on the wrong architecture.
 
-## 4. Fresh aarch64 environment
+## 4. Fresh runtime: NGC PyTorch container (primary path)
+
+Build the runtime on top of the base PyTorch image — the standard DGXOS
+workflow: the image supplies the GB10-tuned CUDA stack and a GB10-tuned
+PyTorch (for pre-flights and introspection), and the QOPO environment is
+built inside it with `uv`, exactly as on any dev box.
 
 ```bash
 git clone https://github.com/dasobral/qaoa-portfolio.git
 cd qaoa-portfolio
 git checkout feature/runtime-spark
 
-# Rust toolchain (aarch64) + uv
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-python3 -m pip install uv
+# 1) Pull the base image (verify the arm64 entry as in section 3):
+docker pull nvcr.io/nvidia/pytorch:26.09-py3
 
-# Project env (repo convention: qaoa-env/, not .venv/)
-export UV_PROJECT_ENVIRONMENT=qaoa-env
+# 2) Open an interactive container with the repo mounted:
+docker run --rm --gpus all -it \
+  -v $PWD:/work -w /work \
+  nvcr.io/nvidia/pytorch:26.09-py3 bash
+
+# 3) Inside the container (aarch64) — the usual repo setup:
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+. "$HOME/.cargo/env"
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+# Keep the project env outside the mount so `docker commit` can bake it in:
+export UV_PROJECT_ENVIRONMENT=/opt/qaoa-env
 uv sync --extra dev        # builds qaoa_portfolio_core (maturin) for aarch64
 uv run qaoa-portfolio --help
 uv run pytest -q           # optional CPU sanity pass
-
-# The GPU plugin — pin the same minor as the installed PennyLane (0.45.x)
 uv pip install "pennylane-lightning-gpu==0.45.0"
 ```
 
-Device smoke test (finishes in seconds):
+No torch install is needed anywhere in this flow: LightningGPU does not
+depend on PyTorch — its CUDA stack (`custatevec-cu12` + the
+`nvidia-*-cu12` runtime libraries) arrives as prebuilt aarch64 wheels
+from PyPI. The image's PyTorch is only used for pre-flights/introspection
+(and future cuQuantum work, section 9).
+
+Device smoke test (finishes in seconds), still inside the container:
 
 ```bash
 uv run python - <<'EOF'
@@ -112,6 +147,14 @@ def circuit():
 
 print(circuit())          # [0.25 x8] means the CUDA path is alive
 EOF
+```
+
+To avoid rebuilding the env on every run, commit the container after step 3
+(env + built Rust extension are baked in; the mounted repo stays the single
+source of truth):
+
+```bash
+docker commit <container-id> qopo-spark:spark
 ```
 
 ## 5. Enable `lightning.gpu` in QOPO
@@ -129,12 +172,53 @@ first commit of this branch):
 **Option B — no repo change:** the driver script below patches the
 allowlist in memory before the backend module is first imported.
 
-## 6. Run the example: QAOA on the GB10 vs classical baselines
+## 6. Alternative: host venv (no container)
 
-Save as `spark_example.py` in the repo root, then:
+If you deliberately skip the container (the Spark host itself, or a different
+aarch64 box), the same `uv` setup works on the host — and, as of
+LightningGPU 0.45, **no PyTorch is involved at all** (its CUDA dependencies
+are prebuilt aarch64 `-cu12` wheels). Do not install torch globally on the
+Spark:
+
+```bash
+git clone https://github.com/dasobral/qaoa-portfolio.git
+cd qaoa-portfolio
+git checkout feature/runtime-spark
+
+# Rust toolchain (aarch64) + uv
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
+
+# Project env (repo convention: qaoa-env/, not .venv/)
+export UV_PROJECT_ENVIRONMENT=qaoa-env
+uv sync --extra dev        # builds qaoa_portfolio_core (maturin) for aarch64
+uv run qaoa-portfolio --help
+uv run pytest -q           # optional CPU sanity pass
+
+# The GPU plugin — pin the same minor as the installed PennyLane (0.45.x)
+uv pip install "pennylane-lightning-gpu==0.45.0"
+```
+
+The device smoke test from section 4 (`uv run python - <<'EOF' ...`) is the
+same, and the torch introspection in the example script is optional there
+(no global torch — it will just print a skip note).
+
+## 7. Run the example: QAOA on the GB10 vs classical baselines
+
+Save as `spark_example.py` in the repo root, then run it in the section 4
+container (with the env already built):
 
 ```bash
 uv run python spark_example.py
+```
+
+If you committed the image (`qopo-spark:spark`), the whole run is one line:
+
+```bash
+docker run --rm --gpus all -v $PWD:/work -w /work \
+  -e UV_PROJECT_ENVIRONMENT=/opt/qaoa-env \
+  qopo-spark:spark uv run python spark_example.py
 ```
 
 ```python
@@ -224,7 +308,7 @@ classical baselines in practice.
 For the scaling picture, raise `num_assets` (12, 16, 20 — the exact-simulation
 ceiling) and re-run; each is a fresh, seeded, paired comparison.
 
-## 7. RAM budgeting (read before big runs)
+## 8. RAM budgeting (read before big runs)
 
 - The GB10's 128 GB pool is **shared between CPU and GPU**. The locally
   deployed coding agent holds a large slice of it while active — **close or
@@ -232,21 +316,14 @@ ceiling) and re-run; each is a fresh, seeded, paired comparison.
   as much of the pool as possible.
 - Measured Python-side peaks on the 3080 (CPU simulator, `tracemalloc`):
   n = 8 → 3.4 MB, n = 16 → 676 MB, **n = 20 → 16.2 GB**. Add the CUDA
-  context + PyTorch allocator (a few GB) when on `lightning.gpu`.
+  context + cuStateVec workspace (a few GB) when on `lightning.gpu`.
 - Run one solve at a time; no parallel `pytest` or second benchmark.
 - Monitor with `free -g` (the unified pool) and `nvidia-smi` (SM
   utilization; memory counters are shared on GB10 and may read N/A).
 - If OOM at n = 20: lower `repeats`/`max_iterations`, or step down to
   n = 16 first.
 
-## 8. Alternative runtime stacks (if the host setup is not enough)
-
-Two other ways to get the "NVIDIA-prepared for GB10" environment, listed
-because they were explicitly considered for this experiment. Neither is
-required to run the example — the host setup in §4 already is — but they
-are the fallbacks / upgrade paths.
-
-### 8.1 cuQuantum (NVIDIA's quantum SDK) — maximum GPU optimization, real integration work
+## 9. cuQuantum (NVIDIA's quantum SDK) — maximum GPU optimization, real integration work
 
 - `pip install cuquantum` is a meta package that pulls `cuquantum-cu12`
   (or `-cu13`), which installs the prebuilt NVIDIA libraries —
@@ -257,61 +334,41 @@ are the fallbacks / upgrade paths.
   binary compatibility.
 - `pip install cuquantum-python` adds NVIDIA's official Python bindings
   (low-level: state-vector propagation, gates, expectation values).
+- Note that LightningGPU 0.45 already *links* cuStateVec — `custatevec-cu12`
+  is its core dependency — so the same prebuilt library powers both paths;
+  what changes is the QAOA loop itself (cost Hamiltonian evolutions,
+  X-mixer, optimizer steps, probability extraction).
 - **But there is no drop-in PennyLane device built on cuQuantum** on PyPI —
   adopting it means rewriting the QAOA loop (`quantum_backend.py`: cost
   Hamiltonian evolutions, X-mixer, optimizer steps, probability extraction)
   against the cuStateVec API instead of `qml.qnode`. That is a separate
   engineering effort, not a config flag.
-- **Verdict:** run the LightningGPU path first (§4–§6). If its throughput on
-  GB10 is the bottleneck for the comparison, then open the cuQuantum
-  integration as a follow-up phase of this branch.
+- **Verdict:** run the LightningGPU path first (sections 4 and 7). If its
+  throughput on GB10 is the bottleneck for the comparison, then open the
+  cuQuantum integration as a follow-up phase of this branch.
 
-### 8.2 NVIDIA ready-to-use containers on DGXOS — the reproducible path
-
-DGXOS includes NGC access and Docker with the NVIDIA runtime. If you want
-the whole stack to come from NVIDIA's GB10-validated containers instead of
-the host packages (reproducible across machines, or the host toolchain is
-incomplete):
-
-```bash
-# Pick the newest 12.8.x arm64 tag in the NGC catalog (verify the tag has
-# an arm64 entry before pulling):
-docker manifest inspect nvcr.io/nvidia/cuda:12.8-devel-ubuntu24.04
-
-docker run --rm --gpus all -it \
-  -v $PWD:/work -w /work \
-  -e UV_PROJECT_ENVIRONMENT=qaoa-env \
-  nvcr.io/nvidia/cuda:12.8-devel-ubuntu24.04 bash
-```
-
-Inside the container the workflow is unchanged: install rustup + uv,
-`uv sync --extra dev`, `uv pip install pennylane-lightning-gpu` (plus a
-GB10-capable aarch64 PyTorch — an NGC PyTorch container can substitute for
-the CUDA base image if you prefer PyTorch to be baked in), then run
-`spark_example.py`. The Rust extension and the PennyLane env build inside
-the container's aarch64 toolchain exactly as in §4; nothing about the
-project code changes.
 
 Decision guide:
 
 | Path | When | Effort |
 |---|---|---|
-| Host DGXOS + `lightning.gpu` (§4) | Default — run the experiment this week | ~30 min setup |
-| NVIDIA container (§8.2) | Reproducibility / host stack incomplete | +30 min |
-| cuQuantum rewrite (§8.1) | Only if LightningGPU's GB10 throughput disappoints | Separate project |
+| NGC PyTorch container + `lightning.gpu` (section 4) | Default — run the experiment this week | ~30–45 min setup |
+| Host venv (section 6) | No container on the box / lighter isolation | ~30 min |
+| cuQuantum rewrite (section 9) | Only if LightningGPU's GB10 throughput disappoints | Separate project |
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
 | `lightning.gpu` device not found / plugin import error | Plugin missing from `qaoa-env`, or PennyLane/plugin minor mismatch — both must be 0.45.x (`uv pip list \| grep -i pennylane`). |
 | `QuantumBackendError: Unable to create PennyLane backend 'lightning.gpu'` | Allowlist — apply §5 option A (option B in the script already covers this). |
-| torch kernel errors mentioning sm_121 / "no kernel image" | PyTorch build lacks Blackwell-consumer kernels — use the GB10 PyTorch that ships with DGXOS (or an aarch64 cu128 wheel built with sm_121). |
-| CUDA version mismatch errors between torch and system toolkit | Align on 12.8 (DGXOS default); do not mix with the 3080's 12.0 assumptions. |
+| `no kernel image` / kernel errors from `custatevec-cu12` or `nvidia-*-cu12` | The wheels embed `sm_100` + `sm_120` cubins (sm_120 SASS runs on sm_121). Re-run the section 3 pre-flight (expect `(12, 1)`), confirm you installed the **aarch64** wheels, and if it still fails, escalate to the section 9 cuQuantum path. |
+| CUDA version mismatch between the `-cu12` wheels and the system | Everything is CUDA 12.x (12.8 on DGXOS); do not mix in `-cu13` wheels or the 3080's 12.0 assumptions. |
+| GPU not visible inside the container (`nvidia-smi` fails in the container) | The container was started without GPU access — re-run with `--gpus all` (and verify: `docker run --rm --gpus all nvcr.io/nvidia/pytorch:26.09-py3 nvidia-smi`). |
 | cuQuantum wheels refuse to initialize on the GB10 | Check `nvidia-smi` driver vs the wheel's CUDA major version (use the `-cu12` wheels on CUDA 12.8); if sm_120 SASS does not JIT on your driver, wait for/force a cuQuantum build that lists sm_121 explicitly. |
-| `lightning.gpu` does not work on GB10 at all | Fall back to `lightning.qubit` (CPU) so the classical comparison still runs, and document the gap; escalate to the §8.1 cuQuantum path. |
+| `lightning.gpu` does not work on GB10 at all | Fall back to `lightning.qubit` (CPU) so the classical comparison still runs, and document the gap; escalate to the section 9 cuQuantum path. |
 
-## 10. Recording results & next steps for this branch
+## 11. Recording results & next steps for this branch
 
 - Keep seed 42, the 1-layer benchmark preset, and the solver list identical
   to the 3080 runs so hardware/backend is the only variable; the JSON
@@ -323,4 +380,4 @@ Decision guide:
      GPU device directly.
   3. Add the measured Spark numbers (n = 8 / 12 / 16 / 20) to
      `docs/benchmarks.md` and the README headline table.
-  4. (If needed) cuQuantum-based backend prototype, following §8.1.
+  4. (If needed) cuQuantum-based backend prototype, following section 9.
