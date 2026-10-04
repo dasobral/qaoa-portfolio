@@ -46,6 +46,12 @@ dev = [
     "mypy>=1.5.0",
     "ipykernel>=6.25.0",
 ]
+# CUDA statevector simulator for --qaoa-backend lightning.gpu (Linux x86_64/aarch64
+# wheels, Python >= 3.11; ships its own -cu12 runtime). Keep the version in lockstep
+# with the locked pennylane (0.45.x).
+gpu = [
+    "pennylane-lightning-gpu==0.45.0; sys_platform == 'linux' and python_version >= '3.11'",
+]
 
 [project.scripts]
 qaoa-portfolio = "qaoa_portfolio.cli:main"

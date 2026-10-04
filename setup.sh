@@ -9,8 +9,15 @@ cd "$(dirname "$0")"
 # The repository-standard Python environment lives in qaoa-env/, not .venv/.
 export UV_PROJECT_ENVIRONMENT=qaoa-env
 
-echo "==> Syncing Python environment (qaoa-env/) and building the Rust extension..."
-uv sync --extra dev
+# On hosts with an NVIDIA GPU, also install the lightning.gpu simulator (gpu extra)
+# so a later sync never drops it. Override with QOPO_GPU=0 or QOPO_GPU=1.
+extras=(--extra dev)
+if [[ "${QOPO_GPU:-auto}" == "1" ]] || { [[ "${QOPO_GPU:-auto}" == "auto" ]] && command -v nvidia-smi >/dev/null 2>&1; }; then
+    extras+=(--extra gpu)
+fi
+
+echo "==> Syncing Python environment (qaoa-env/) and building the Rust extension (${extras[*]})..."
+uv sync "${extras[@]}"
 
 echo "==> Verifying installation..."
 uv run qaoa-portfolio --help >/dev/null

@@ -31,6 +31,12 @@ qaoa-portfolio --help
 
 `UV_PROJECT_ENVIRONMENT=qaoa-env` prevents uv from falling back to `.venv/`. Keep it exported in shells where you run `uv sync` or `uv run`; otherwise an active `qaoa-env` shell can still produce a `VIRTUAL_ENV ... does not match .venv` warning.
 
+On an NVIDIA GPU host (Linux, Python ≥ 3.11), add the `gpu` extra to install the `lightning.gpu` simulator used by `--qaoa-backend lightning.gpu`. Always pass it on later syncs too: a sync without `--extra gpu` uninstalls the plugin.
+
+```bash
+uv sync --extra dev --extra gpu
+```
+
 For one-off commands without exporting first, prefix the command:
 
 ```bash

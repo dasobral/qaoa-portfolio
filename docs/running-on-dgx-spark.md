@@ -119,10 +119,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 # Keep the project env outside the mount so `docker commit` can bake it in:
 export UV_PROJECT_ENVIRONMENT=/opt/qaoa-env
-uv sync --extra dev        # builds qaoa_portfolio_core (maturin) for aarch64
+uv sync --extra dev --extra gpu   # builds qaoa_portfolio_core (maturin) for aarch64 + lightning.gpu
 uv run qaoa-portfolio --help
 uv run pytest -q           # optional CPU sanity pass
-uv pip install "pennylane-lightning-gpu==0.45.0"
 ```
 
 No torch install is needed anywhere in this flow: LightningGPU does not
@@ -190,13 +189,16 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # Project env (repo convention: qaoa-env/, not .venv/)
 export UV_PROJECT_ENVIRONMENT=qaoa-env
-uv sync --extra dev        # builds qaoa_portfolio_core (maturin) for aarch64
+uv sync --extra dev --extra gpu   # builds qaoa_portfolio_core (maturin) for aarch64 + lightning.gpu
 uv run qaoa-portfolio --help
 uv run pytest -q           # optional CPU sanity pass
-
-# The GPU plugin — pin the same minor as the installed PennyLane (0.45.x)
-uv pip install "pennylane-lightning-gpu==0.45.0"
 ```
+
+The `gpu` extra pins `pennylane-lightning-gpu==0.45.0` (same minor as the locked
+PennyLane) in `pyproject.toml`/`uv.lock`. Always sync with `--extra gpu` on the
+Spark: a plain `uv sync --extra dev` uninstalls the plugin. Environments set up
+earlier with `uv pip install "pennylane-lightning-gpu==0.45.0"` become lock-managed
+after one `uv sync --extra dev --extra gpu`.
 
 The device smoke test from section 4 (`uv run python - <<'EOF' ...`) is the
 same, and the torch introspection in the example script is optional there
@@ -407,7 +409,7 @@ Decision guide:
 
 | Symptom | Cause / fix |
 |---|---|
-| `lightning.gpu` device not found / plugin import error | Plugin missing from `qaoa-env`, or PennyLane/plugin minor mismatch — both must be 0.45.x (`uv pip list \| grep -i pennylane`). |
+| `lightning.gpu` device not found / plugin import error | Plugin missing from `qaoa-env` (typically after a `uv sync` without `--extra gpu` — re-run `uv sync --extra dev --extra gpu`), or PennyLane/plugin minor mismatch — both must be 0.45.x (`uv pip list \| grep -i pennylane`). |
 | `QuantumBackendError: Unable to create PennyLane backend 'lightning.gpu'` | Allowlist — apply §5 option A (option B in the script already covers this). |
 | `no kernel image` / kernel errors from `custatevec-cu12` or `nvidia-*-cu12` | The wheels embed `sm_100` + `sm_120` cubins (sm_120 SASS runs on sm_121). Re-run the section 3 pre-flight (expect `(12, 1)`), confirm you installed the **aarch64** wheels, and if it still fails, escalate to the section 9 cuQuantum path. |
 | CUDA version mismatch between the `-cu12` wheels and the system | Everything is CUDA 12.x (12.8 on DGXOS); do not mix in `-cu13` wheels or the 3080's 12.0 assumptions. |

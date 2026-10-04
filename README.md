@@ -33,6 +33,12 @@ qaoa-portfolio --help
 
 `UV_PROJECT_ENVIRONMENT=qaoa-env` makes uv use `qaoa-env/` as the project environment instead of `.venv/`. Keep that variable exported in shells where you run `uv sync` or `uv run`; otherwise uv will fall back to `.venv` and may warn that `VIRTUAL_ENV=qaoa-env` does not match the project environment.
 
+On an NVIDIA GPU host (Linux, Python ≥ 3.11), add the `gpu` extra to install the `lightning.gpu` simulator used by `--qaoa-backend lightning.gpu`. Always pass it on later syncs too: a sync without `--extra gpu` uninstalls the plugin.
+
+```bash
+uv sync --extra dev --extra gpu
+```
+
 Build the Rust core directly when working on Rust internals:
 
 ```bash
@@ -114,6 +120,7 @@ See [Visualization API](docs/visualization.md) for usage and configuration detai
 | Random selection | 0.558 | 0/10 | 0.1 ms |
 
 QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exceeding the 15–25 % roadmap target) and is statistically indistinguishable from the classical Markowitz baseline (p ≈ 0.30). On real 2022–2024 data QAOA found the exact QUBO optimum for the crypto and mixed-asset studies. The measured ceiling for exact statevector simulation is 20 assets (396 s, 16 GB per solve).
+
 
 ### 🚧 In Development
 

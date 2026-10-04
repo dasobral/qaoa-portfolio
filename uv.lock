@@ -733,6 +733,15 @@ wheels = [
 ]
 
 [[package]]
+name = "custatevec-cu12"
+version = "1.15.0"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/11/8b3df17b7d499a9a43f397b6d32068873fcb431a8b31d3c49bd0dd9ff588/custatevec_cu12-1.15.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:feb244a65c4e77944d654f86278f752db34e631aa6de1a3782f648514573dbd9", size = 73234869, upload-time = "2026-09-11T01:35:22.542Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/26/a24ee3a10e827126d621f8a4fcef059a9423f89b219c5856f76d5a16075d/custatevec_cu12-1.15.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:211deed0a5f600b4a76df74145bb0f93c208f72dd59eb71d650981d431b06312", size = 73222695, upload-time = "2026-09-11T01:35:52.638Z" },
+]
+
+[[package]]
 name = "cycler"
 version = "0.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1657,6 +1666,57 @@ wheels = [
 ]
 
 [[package]]
+name = "nvidia-cublas-cu12"
+version = "12.9.2.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nvidia-cuda-nvrtc-cu12", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f7/a2/c96163a0fff1839c0c9548bbdeae7b853b867009e33b9b9264adc238b1cf/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:5572131a59c3eebeeb1c4c8144f772d49372c20124916e072a0e3fc30df421d5", size = 575012079, upload-time = "2026-04-08T18:51:47.303Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/c0/0a517bfe63ccd3b92eb254d264e28fca3c7cab75d07daea315250fb1bf73/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:e4f53a8ca8c5d6e8c492d0d0a3d565ecb59a751b19cfdaa4f6da0ab2104c1702", size = 581240110, upload-time = "2026-04-08T18:52:31.532Z" },
+]
+
+[[package]]
+name = "nvidia-cuda-nvrtc-cu12"
+version = "12.9.86"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/85/e4af82cc9202023862090bfca4ea827d533329e925c758f0cde964cb54b7/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:210cf05005a447e29214e9ce50851e83fc5f4358df8b453155d5e1918094dcb4", size = 89568129, upload-time = "2025-06-05T20:02:41.973Z" },
+    { url = "https://files.pythonhosted.org/packages/64/eb/c2295044b8f3b3b08860e2f6a912b702fc92568a167259df5dddb78f325e/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:096d4de6bda726415dfaf3198d4f5c522b8e70139c97feef5cd2ca6d4cd9cead", size = 44528905, upload-time = "2025-06-05T20:02:29.754Z" },
+]
+
+[[package]]
+name = "nvidia-cuda-runtime-cu12"
+version = "12.9.79"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bc/e0/0279bd94539fda525e0c8538db29b72a5a8495b0c12173113471d28bce78/nvidia_cuda_runtime_cu12-12.9.79-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:83469a846206f2a733db0c42e223589ab62fd2fabac4432d2f8802de4bded0a4", size = 3515012, upload-time = "2025-06-05T20:00:35.519Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/46/a92db19b8309581092a3add7e6fceb4c301a3fd233969856a8cbf042cd3c/nvidia_cuda_runtime_cu12-12.9.79-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:25bba2dfb01d48a9b59ca474a1ac43c6ebf7011f1b0b8cc44f54eb6ac48a96c3", size = 3493179, upload-time = "2025-06-05T20:00:53.735Z" },
+]
+
+[[package]]
+name = "nvidia-cusparse-cu12"
+version = "12.5.10.65"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nvidia-nvjitlink-cu12", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5e/6f/8710fbd17cdd1d0fc3fea7d36d5b65ce1933611c31e1861da330206b253a/nvidia_cusparse_cu12-12.5.10.65-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:221c73e7482dd93eda44e65ce567c031c07e2f93f6fa0ecd3ba876a195023e83", size = 366359408, upload-time = "2025-06-05T20:07:42.501Z" },
+    { url = "https://files.pythonhosted.org/packages/12/46/b0fd4b04f86577921feb97d8e2cf028afe04f614d17fb5013de9282c9216/nvidia_cusparse_cu12-12.5.10.65-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:73060ce019ac064a057267c585bf1fd5a353734151f87472ff02b2c5c9984e78", size = 366465088, upload-time = "2025-06-05T20:08:20.413Z" },
+]
+
+[[package]]
+name = "nvidia-nvjitlink-cu12"
+version = "12.9.86"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/46/0c/c75bbfb967457a0b7670b8ad267bfc4fffdf341c074e0a80db06c24ccfd4/nvidia_nvjitlink_cu12-12.9.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:e3f1171dbdc83c5932a45f0f4c99180a70de9bd2718c1ab77d14104f6d7147f9", size = 39748338, upload-time = "2025-06-05T20:10:25.613Z" },
+    { url = "https://files.pythonhosted.org/packages/97/bc/2dcba8e70cf3115b400fef54f213bcd6715a3195eba000f8330f11e40c45/nvidia_nvjitlink_cu12-12.9.86-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:994a05ef08ef4b0b299829cde613a424382aff7efb08a7172c1fa616cc3af2ca", size = 39514880, upload-time = "2025-06-05T20:10:04.89Z" },
+]
+
+[[package]]
 name = "packaging"
 version = "26.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1964,6 +2024,32 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/74/cecb20d032bc5f98ec2a6b373fc464a6979de6a306f7bb1db0fd61ecd922/pennylane_lightning-0.45.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7992ba71246751cabebfc371b8cbe6b953bfdb746c2044c8161a9373d1eda33c", size = 25528043, upload-time = "2026-05-12T19:11:27.129Z" },
     { url = "https://files.pythonhosted.org/packages/21/2a/e17e7a8746be2539c255ca6c53dfb7e7e3bb1d54c71e2219065021a8fd0d/pennylane_lightning-0.45.0-cp314-cp314-win_amd64.whl", hash = "sha256:3e0869f6fe2091bf9cb88f501257ccb18d2dd4a21e7a0d5d66239c10897a36e6", size = 5435459, upload-time = "2026-05-12T19:11:29.87Z" },
     { url = "https://files.pythonhosted.org/packages/84/03/c1f12a8d137c135551c9fb71890021d8958dc0d6152505907cf35854df68/pennylane_lightning-0.45.0-py3-none-any.whl", hash = "sha256:24f6c1f7db13dec80fdbe167579c5c42f1098c8f798ba9513e1b8d0906f64cc1", size = 1046727, upload-time = "2026-05-12T19:11:31.98Z" },
+]
+
+[[package]]
+name = "pennylane-lightning-gpu"
+version = "0.45.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "custatevec-cu12", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-cublas-cu12", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-cuda-runtime-cu12", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-cusparse-cu12", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-nvjitlink-cu12", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "pennylane", version = "0.45.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "pennylane-lightning", version = "0.45.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "scipy-openblas32", marker = "python_full_version >= '3.11' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4c/96/27323e4dffd5b7eb8e533c2c119632fc048b5ce840dfe6e4957dc6bce572/pennylane_lightning_gpu-0.45.0.tar.gz", hash = "sha256:59d578fe1b7929410c33651d6546171d23e2c9e0f91d4026beada993a2222944", size = 771076, upload-time = "2026-05-12T19:12:45.31Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/c1/1da030c7cca87c437146fb489361053f29bee05c52f04bb70baef0ea7f60/pennylane_lightning_gpu-0.45.0-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:82c82deaa06ca5137a2f62dcf6df6b4dc8d3aabcb245997eb2811957958370cb", size = 841307, upload-time = "2026-05-12T19:11:41.363Z" },
+    { url = "https://files.pythonhosted.org/packages/40/21/8dcb8742a2d4019af594b0cf92f353717b47b52a3a10e9796bb8cf791328/pennylane_lightning_gpu-0.45.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:8fa158507144efa9f4e7c202e583a677c034eea303b8710d3152aef2e400b680", size = 924889, upload-time = "2026-05-12T19:11:43.125Z" },
+    { url = "https://files.pythonhosted.org/packages/41/02/2e34305da68e23af05bf8bf7d58ccb025718bad9fbf3fe8b70dd278102f4/pennylane_lightning_gpu-0.45.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:3fa52f6b04806064c51e085d0a2a322c66770ab1f344d3443838436b82bc177b", size = 840432, upload-time = "2026-05-12T19:11:44.508Z" },
+    { url = "https://files.pythonhosted.org/packages/98/05/fc9e8a00e604ccdea5b0f83acd75cb3f0112f0dbbe506293732f1f87c08d/pennylane_lightning_gpu-0.45.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:0d23463770dacc3055b12c10cae194cc6ab991d4a28aa31433093d0424f8b5b8", size = 924608, upload-time = "2026-05-12T19:11:45.709Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/ad/2eb867ec3bda91950cd7fae4ff29456d461429621bbd234d6ce652612a55/pennylane_lightning_gpu-0.45.0-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:b382b02ae4b7876e06d4e2dcbe6e704899c9cf20f29158e4e84836e285a688c5", size = 840391, upload-time = "2026-05-12T19:11:47.358Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/15/9cc69f9285a16129696d690bf11fead798bb8f972a78c7916560e4053e06/pennylane_lightning_gpu-0.45.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:7f5cea2fb03fe219a82b837e221a6be93f0220e5cd7f882a130446c456b6b525", size = 924548, upload-time = "2026-05-12T19:11:48.564Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/7d/70e57a5b42ffe6e5f7c477b433ccc95201c2b5d065caff7a547b136c0280/pennylane_lightning_gpu-0.45.0-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:0c4aeb6cd3604f80390dff6bb5a89b8cd848b6cb04916864356b6b37d092a71d", size = 840867, upload-time = "2026-05-12T19:11:49.865Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/f5/2eca7305e84e4ec8690d15eb65528241360c59b0a9a672dba6a72043f1d2/pennylane_lightning_gpu-0.45.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:0335f9321497f44428bf7c21daff3a354359d8dff3f103037be59413acd5e073", size = 924537, upload-time = "2026-05-12T19:11:51.194Z" },
 ]
 
 [[package]]
@@ -2431,6 +2517,9 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
+gpu = [
+    { name = "pennylane-lightning-gpu", marker = "python_full_version >= '3.11' and sys_platform == 'linux'" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2443,6 +2532,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pennylane", specifier = ">=0.33.0" },
     { name = "pennylane-lightning", specifier = ">=0.33.0" },
+    { name = "pennylane-lightning-gpu", marker = "python_full_version >= '3.11' and sys_platform == 'linux' and extra == 'gpu'", specifier = "==0.45.0" },
     { name = "plotly", specifier = ">=5.18.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
@@ -2452,7 +2542,7 @@ requires-dist = [
     { name = "seaborn", specifier = ">=0.13.0" },
     { name = "yfinance", specifier = ">=0.2.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "gpu"]
 
 [[package]]
 name = "requests"
