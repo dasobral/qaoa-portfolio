@@ -257,8 +257,10 @@ only the first is QAOA's job.
 Same seeds (42), instance generator, and QUBO (risk 0.5, k = n/2) as §1;
 the backend is selected with `--qaoa-backend` (install `lightning.gpu` with
 `uv sync --extra dev --extra gpu`). Every run is logged with wall time, peak
-memory, and whether another benchmark shared the host; runs that shared a
-host are marked below. Example:
+memory, and whether another benchmark shared the host. Both campaigns ran
+CPU-only tracks alongside the GPU preset runs at n ≤ 24, so the preset
+timings in §7.5–7.6 are slightly pessimistic; the cost ladder (§7.3), the
+n > 20 cost probes (§7.4), and the n = 26 preset solves ran alone. Example:
 
 ```bash
 uv run qaoa-portfolio benchmark --suite quality --assets 12 --repeats 10 --seed 42 \
@@ -349,7 +351,7 @@ Mean approximation ratio (instances solved to the exact optimum):
 | 20 | 10 | 0.720 (5) | 0.845 (0) | 0.889 (1) | 0.611 (0) |
 | 22 † | 5 | 0.630 (2) | 0.828 (0) | 0.806 (0) | 0.608 (0) |
 | 24 † | 5 | 0.769 (3) | 0.827 (0) | 0.951 (0 of 3) | 0.464 (0 of 3) |
-| 26 † | 3 | 0.453 (1) | 0.740 (0) | 1.000 (1 of 1) | — |
+| 26 † | 3 | 0.453 (1) | 0.740 (0) | 1.000 (1 of 1) | 0.533 (0 of 1) |
 
 † outside the harness (§7.4). QAOA time per solve on `lightning.gpu`
 (RTX / GB10): n = 12 16 / 13 s, n = 20 57 / 66 s, n = 24 428 / 1 123 s,
@@ -405,7 +407,8 @@ How to read this table:
 3. QAOA reaches the exact optimum at n = 24–26, where untuned simulated
    annealing does not — a promising but not yet fair comparison (§7.5).
 4. COBYLA is the better optimizer for this problem: better or equal hit rates
-   at 3.5–14× less time, and no gradient memory.
+   at every size except n = 24, at 2.5–12× less time on the same backend, and
+   no gradient memory.
 5. The current circuit construction, not the GPUs, dominates run time;
    expressing the cost layer as a single pass is the largest available
    speed-up.

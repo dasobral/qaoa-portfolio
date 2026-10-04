@@ -128,7 +128,7 @@ QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exc
 - n = 20 QAOA solve: 396 s → 12.7 s on `lightning.gpu` (31×); the June 16 GB peak was `default.qubit` backprop memory, ~17 MB with the lightning backends.
 - Exact simulation now reaches 26 assets on the RTX 3080 and 28 on the DGX Spark (measured outside the harness, which still caps n at 20). The RTX is ~2.8× faster per solve (memory bandwidth); the Spark goes larger (capacity).
 - QAOA reaches the exact optimum at 24–26 assets where the default, untuned simulated annealing does not, but with a lower mean ratio and minutes-to-hours versus milliseconds — not yet a fair comparison.
-- COBYLA beats Adam for this problem: equal or better hit rates at 3.5–14× less time.
+- COBYLA beats Adam for this problem: better or equal hit rates at every size except 24 assets (2/5 vs 3/5), at 2.5–12× less time on the same backend.
 
 **Results dashboard:** `python front/build_data.py` bundles every artifact under `results/benchmarks/` (including datasets copied from other hosts) and `front/index.html` displays it — quality, scaling, optimizer budget, depth, market studies, and a run log. Static page, no server needed; see [front/README.md](front/README.md).
 

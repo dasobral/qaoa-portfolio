@@ -93,7 +93,20 @@
   const seriesOfArtifact = (a) => seriesFor(configOf(a), a.campaign);
   const seriesRank = (s) => configKeys.indexOf(s.key) * 100 + campaigns.indexOf(s.campaign);
 
-  const R = D.records.map((r) => Object.assign({ art: A[r.a] }, r));
+  // One record per (series, suite, solver, n, seed, QAOA settings): short probes and
+  // repeated runs re-solve the same seeded instance; keep the most recent artifact's solve.
+  const R = (() => {
+    const all = D.records.map((r) => Object.assign({ art: A[r.a] }, r));
+    const best = new Map();
+    all.forEach((r) => {
+      if (r.sd === null || r.sd === undefined) { best.set(Symbol(), r); return; }
+      // within one suite only: other suites re-solve the same seeds for different views
+      const k = [configOf(r.art), r.art.campaign, r.art.suite, r.s, r.n, r.sd, r.L, r.it, r.rs, r.op].join('|');
+      const prev = best.get(k);
+      if (!prev || String(r.art.created) > String(prev.art.created)) best.set(k, r);
+    });
+    return [...best.values()];
+  })();
 
   /* ---------- filter state ---------- */
   const state = {
