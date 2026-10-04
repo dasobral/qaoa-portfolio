@@ -84,4 +84,4 @@ class QAOAParams:
     DEFAULT_CONVERGENCE_THRESHOLD = 1e-6
 
     SUPPORTED_OPTIMIZERS = ("adam", "gradient_descent", "cobyla", "nelder_mead")
-    SUPPORTED_BACKENDS = ("default.qubit", "lightning.qubit")
+    SUPPORTED_BACKENDS = ("default.qubit", "lightning.qubit", "lightning.gpu")
