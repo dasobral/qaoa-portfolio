@@ -162,3 +162,6 @@ PROJECT_GOALS.md
 PROJECT_*
 docs/CODE_REVIEW_*.md
 docs/EXPERIMENT_LOG.md
+
+# Dashboard data bundle (generated from results/ by front/build_data.py)
+front/data/

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QOPO Benchmarks</title>
+  <meta name="description" content="QAOA portfolio optimizer — benchmark results across RTX 3080 and DGX Spark (GB10).">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#top" aria-label="QOPO benchmarks — top">
+        <span class="brand-mark">qopo<span>.</span></span>
+        <span class="brand-name">QAOA portfolio<br>benchmarks</span>
+      </a>
+      <nav class="site-nav" aria-label="Sections">
+        <a href="#quality">Quality</a>
+        <a href="#scaling">Scaling</a>
+        <a href="#budget">Optimizer budget</a>
+        <a href="#depth">Depth</a>
+        <a href="#market">Market</a>
+        <a href="#runs">Runs</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero wrap" id="top">
+    <p class="eyebrow"><span class="status-dot"></span><span id="generated">Benchmark dataset</span></p>
+    <h1>QAOA vs classical solvers, <em>measured on real silicon.</em></h1>
+    <p class="lede">Every number comes from the project's own benchmark harness (<code>qaoa-portfolio benchmark</code>) on seeded, paired instances, so each host and simulator backend solves the same problems. Quality is the approximation ratio against the brute-force optimum: 1.0 means the optimum was found.</p>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <div class="filters">
+    <div class="wrap filters-inner">
+      <div class="filter-group" id="filter-campaign"><span class="filter-label">Campaign</span></div>
+      <div class="filter-group" id="filter-config"><span class="filter-label">Host · backend</span></div>
+    </div>
+  </div>
+
+  <main class="wrap">
+    <section class="section" id="quality">
+      <div class="section-head">
+        <div>
+          <span class="num">01</span>
+          <h2>Solution quality</h2>
+          <p>Mean approximation ratio per solver on the benchmark preset (1 layer, Adam, 60 iterations, 2 restarts); whiskers show ±1 std over paired instances. Classical solvers run on the CPU, so each host carries its own classical reference.</p>
+        </div>
+        <div class="controls" id="quality-n"></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">Approximation ratio by solver</h3>
+          <p class="card-sub" id="quality-sub"></p>
+          <div class="chart" id="chart-quality"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">QAOA time per solve</h3>
+          <p class="card-sub">Median wall-clock per QAOA solve, same instances</p>
+          <div class="chart" id="chart-quality-time"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="scaling">
+      <div class="section-head">
+        <div>
+          <span class="num">02</span>
+          <h2>Scaling with portfolio size</h2>
+          <p>Statevector cost doubles with every added asset (2<sup>n</sup> amplitudes). Log-scale time and memory per QAOA solve; classical Rust solvers appear as grey references.</p>
+        </div>
+        <div class="controls" id="scaling-preset"></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">Time per solve</h3>
+          <p class="card-sub">Median wall-clock, log scale</p>
+          <div class="chart" id="chart-scaling-time"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Peak Python memory per QAOA solve</h3>
+          <p class="card-sub"><code>tracemalloc</code> peak, log scale (GPU allocations not included)</p>
+          <div class="chart" id="chart-scaling-mem"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">QAOA quality vs size</h3>
+          <p class="card-sub">Mean approximation ratio of the QAOA solver</p>
+          <div class="chart" id="chart-scaling-ratio"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Speed-up over the June baseline</h3>
+          <p class="card-sub">Baseline median ÷ configuration median at the same size (higher is faster)</p>
+          <div class="chart" id="chart-scaling-speedup"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="budget">
+      <div class="section-head">
+        <div>
+          <span class="num">03</span>
+          <h2>Is more optimisation worth it?</h2>
+          <p>QAOA quality as the optimizer budget grows: iterations per restart on the x-axis, one panel per restart count. Flat lines mean extra budget buys nothing.</p>
+        </div>
+        <div class="controls" id="budget-n"></div>
+      </div>
+      <div class="grid-2" id="budget-panels"></div>
+    </section>
+
+    <section class="section" id="depth">
+      <div class="section-head">
+        <div>
+          <span class="num">04</span>
+          <h2>Circuit depth</h2>
+          <p>QAOA layers <i>p</i> versus quality and cost. Depth helps only on instances that a single layer cannot solve.</p>
+        </div>
+        <div class="controls" id="depth-n"></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="card-title">Approximation ratio vs depth</h3>
+          <p class="card-sub">Mean over repeats</p>
+          <div class="chart" id="chart-depth-ratio"></div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Time per solve vs depth</h3>
+          <p class="card-sub">Median wall-clock</p>
+          <div class="chart" id="chart-depth-time"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="market">
+      <div class="section-head">
+        <div>
+          <span class="num">05</span>
+          <h2>Real market data</h2>
+          <p>Optimise on the first 70 % of the 2022–2024 window, then score the equal-weighted selection out of sample. QUBO ratio measures the solver; the out-of-sample columns measure the portfolio model.</p>
+        </div>
+      </div>
+      <div class="market-grid" id="market-studies"></div>
+    </section>
+
+    <section class="section" id="runs">
+      <div class="section-head">
+        <div>
+          <span class="num">06</span>
+          <h2>Run log</h2>
+          <p>Every artifact behind this page, including failed or aborted probes recorded in the campaign manifests: the limits we hit are results too.</p>
+        </div>
+      </div>
+      <div class="table-wrap" id="runs-table"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <p><strong>QAOA Portfolio Optimizer</strong> · Daniel Sobral Blanco</p>
+      <p>Rebuild data: <code>python front/build_data.py</code></p>
+    </div>
+  </footer>
+
+  <div class="tooltip" id="tooltip" role="status" aria-live="polite"></div>
+  <script src="data/qopo-data.js"></script>
+  <script src="charts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

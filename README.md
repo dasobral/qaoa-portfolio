@@ -121,6 +121,7 @@ See [Visualization API](docs/visualization.md) for usage and configuration detai
 
 QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exceeding the 15–25 % roadmap target) and is statistically indistinguishable from the classical Markowitz baseline (p ≈ 0.30). On real 2022–2024 data QAOA found the exact QUBO optimum for the crypto and mixed-asset studies. The measured ceiling for exact statevector simulation is 20 assets (396 s, 16 GB per solve).
 
+**Results dashboard:** `python front/build_data.py` bundles every artifact under `results/benchmarks/` (including datasets copied from other hosts) and `front/index.html` displays it — quality, scaling, optimizer budget, depth, market studies, and a run log. Static page, no server needed; see [front/README.md](front/README.md).
 
 ### 🚧 In Development
 
