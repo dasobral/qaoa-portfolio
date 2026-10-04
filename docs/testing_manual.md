@@ -254,4 +254,4 @@ Phase 4 visualization tests live in `tests/test_visualization.py` and use the Ma
 
 Phase 5 benchmark tests should separate correctness from performance. Correctness can run in normal pytest; long-running timing studies should use `slow` or `performance` markers and should not block quick development loops unless explicitly requested.
 
-Any phase that changes public behavior should update this manual, the relevant feature docs, and `docs/PROJECT_ROADMAP.md` if phase status or deliverables change.
+Any phase that changes public behavior should update this manual, the relevant feature docs, and the project roadmap if phase status or deliverables change.

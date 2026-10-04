@@ -6,9 +6,8 @@ every number below can be regenerated with the listed command.
 
 - **Module:** `qaoa_portfolio/benchmarks.py`
 - **CLI:** `qaoa-portfolio benchmark --suite {quality,scaling,layers,market}`
-- **Scope:** at most 20 assets — the honest ceiling for exact statevector
-  simulation and full 2^n ranking (see `docs/PROJECT_ROADMAP.md`, Technical
-  Decisions Log, 2026-06-12).
+- **Scope:** at most 20 assets — a harness limit (`MAX_EXACT_ASSETS = 20`):
+  the Rust brute force that supplies the reference optimum accepts n ≤ 20.
 
 ## 1. Methodology
 
