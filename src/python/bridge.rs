@@ -1,5 +1,3 @@
-#![allow(non_local_definitions, unsafe_op_in_unsafe_fn)]
-
 use std::str::FromStr;
 
 use nalgebra::DMatrix;
@@ -18,7 +16,7 @@ use crate::qubo::{QUBOFormulation, QUBOMatrix};
 
 create_exception!(qaoa_portfolio_core, OptimizationError, PyException);
 
-#[pyclass(name = "PyAsset", module = "qaoa_portfolio_core")]
+#[pyclass(name = "PyAsset", module = "qaoa_portfolio_core", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyAsset {
     inner: Asset,
@@ -55,7 +53,11 @@ impl PyAsset {
     }
 }
 
-#[pyclass(name = "PyPortfolio", module = "qaoa_portfolio_core")]
+#[pyclass(
+    name = "PyPortfolio",
+    module = "qaoa_portfolio_core",
+    skip_from_py_object
+)]
 #[derive(Clone, Default)]
 pub struct PyPortfolio {
     assets: Vec<Asset>,
@@ -92,7 +94,11 @@ impl PyPortfolio {
     }
 }
 
-#[pyclass(name = "PyReturnSeries", module = "qaoa_portfolio_core")]
+#[pyclass(
+    name = "PyReturnSeries",
+    module = "qaoa_portfolio_core",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyReturnSeries {
     inner: ReturnSeries,
@@ -117,7 +123,7 @@ impl PyReturnSeries {
         self.inner.num_assets()
     }
 
-    pub fn mean_returns<'py>(&self, py: Python<'py>) -> &'py PyArray1<f64> {
+    pub fn mean_returns<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         let values = self
             .inner
             .mean_returns()
@@ -127,12 +133,16 @@ impl PyReturnSeries {
         PyArray1::from_vec(py, values)
     }
 
-    pub fn covariance_matrix<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray2<f64>> {
+    pub fn covariance_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         matrix_to_pyarray(py, &self.inner.covariance_matrix().map_err(map_err)?)
     }
 }
 
-#[pyclass(name = "PyQUBOMatrix", module = "qaoa_portfolio_core")]
+#[pyclass(
+    name = "PyQUBOMatrix",
+    module = "qaoa_portfolio_core",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyQUBOMatrix {
     inner: QUBOMatrix,
@@ -161,7 +171,7 @@ impl PyQUBOMatrix {
         self.inner.evaluate(&solution).map_err(map_err)
     }
 
-    pub fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray2<f64>> {
+    pub fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         matrix_to_pyarray(py, self.inner.as_matrix())
     }
 
@@ -170,7 +180,11 @@ impl PyQUBOMatrix {
     }
 }
 
-#[pyclass(name = "PyOptimizationResult", module = "qaoa_portfolio_core")]
+#[pyclass(
+    name = "PyOptimizationResult",
+    module = "qaoa_portfolio_core",
+    skip_from_py_object
+)]
 #[derive(Clone)]
 pub struct PyOptimizationResult {
     inner: OptimizationResult,
@@ -203,7 +217,7 @@ impl PyOptimizationResult {
         self.inner.iterations()
     }
 
-    pub fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    pub fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
         dict.set_item("solution", self.solution())?;
         dict.set_item("objective_value", self.objective_value())?;
@@ -226,7 +240,7 @@ impl PyOptimizationResult {
             self.inner.metadata().convergence_history(),
         )?;
         dict.set_item("metadata", metadata)?;
-        Ok(dict.into())
+        Ok(dict.into_any().unbind())
     }
 }
 
@@ -289,14 +303,15 @@ pub fn solve_markowitz(
     prices: PyReadonlyArray2<'_, f64>,
     symbols: Vec<String>,
     py: Python<'_>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let price_matrix = matrix_from_pyarray(prices)?;
     let returns = ReturnSeries::from_prices(symbols, price_matrix).map_err(map_err)?;
     let result = MarkowitzSolver::new().solve(&returns).map_err(map_err)?;
     continuous_result_to_dict(py, &result)
 }
 
-pub fn register(py: Python<'_>, module: &PyModule) -> PyResult<()> {
+pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = module.py();
     module.add("OptimizationError", py.get_type::<OptimizationError>())?;
     module.add_class::<PyAsset>()?;
     module.add_class::<PyPortfolio>()?;
@@ -310,14 +325,14 @@ pub fn register(py: Python<'_>, module: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-fn continuous_result_to_dict(py: Python<'_>, result: &ContinuousResult) -> PyResult<PyObject> {
+fn continuous_result_to_dict(py: Python<'_>, result: &ContinuousResult) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("weights", result.weights())?;
     dict.set_item("expected_return", result.expected_return())?;
     dict.set_item("volatility", result.volatility())?;
     dict.set_item("sharpe_ratio", result.sharpe_ratio())?;
     dict.set_item("symbols", result.symbols())?;
-    Ok(dict.into())
+    Ok(dict.into_any().unbind())
 }
 
 fn matrix_from_pyarray(array: PyReadonlyArray2<'_, f64>) -> PyResult<DMatrix<f64>> {
@@ -332,7 +347,10 @@ fn matrix_from_pyarray(array: PyReadonlyArray2<'_, f64>) -> PyResult<DMatrix<f64
     Ok(DMatrix::from_row_slice(rows, cols, &values))
 }
 
-fn matrix_to_pyarray<'py>(py: Python<'py>, matrix: &DMatrix<f64>) -> PyResult<&'py PyArray2<f64>> {
+fn matrix_to_pyarray<'py>(
+    py: Python<'py>,
+    matrix: &DMatrix<f64>,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
     let values = (0..matrix.nrows())
         .flat_map(|row| (0..matrix.ncols()).map(move |col| matrix[(row, col)]))
         .collect::<Vec<_>>();

@@ -26,8 +26,8 @@ thiserror = "1.0"
 clap = { version = "4.4", features = ["derive"], optional = true }
 
 # Python bindings (Phase 2D)
-pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
-numpy = { version = "0.20", optional = true }
+pyo3 = { version = "0.29", features = ["extension-module"], optional = true }
+numpy = { version = "0.29", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

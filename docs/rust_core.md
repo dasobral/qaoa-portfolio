@@ -7,7 +7,7 @@ Phase 2 provides the Rust computational core for portfolio-to-QUBO conversion an
 - `qaoa_portfolio::portfolio`: asset metadata, validated portfolios, and return statistics.
 - `qaoa_portfolio::qubo`: symmetric QUBO matrix storage, Markowitz formulation, and constraint penalties.
 - `qaoa_portfolio::optimization`: brute-force, simulated annealing, and continuous Markowitz baselines.
-- `qaoa_portfolio::python`: PyO3 bindings enabled with `--features python-bindings`.
+- `qaoa_portfolio::python`: PyO3 bindings enabled with `--features python-bindings` (PyO3 0.29 `Bound` API with the matching `numpy` 0.29 crate; build with maturin ≥ 1.0).
 
 ## Portfolio Data
 
