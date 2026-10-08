@@ -515,8 +515,10 @@ uv run qaoa-portfolio benchmark --suite quality --assets 12 --repeats 10 --seed 
 Does "QAOA reaches the optimum more often than SA" (§7.5) survive a tuned
 baseline? RTX 3080 host, 20 paired instances per size (seeds 42–61, risk 0.5,
 k = n/2), QAOA on the COBYLA preset (`lightning.gpu`), SA on the CPU with the
-`auto` schedule at increasing sweep budgets (§9.1). SA timings were taken while
-the host also ran the QAOA jobs, so treat them as indicative.
+`auto` schedule at increasing sweep budgets (§9.1). The SA runs and the n ≤ 20
+QAOA runs shared the host with other jobs, so their timings are indicative
+(n = 12 QAOA took 7.4 s per solve alone versus 10.9 s here; the GPU-bound
+n = 24 runs matched earlier solo timings).
 
 Instances solved to the optimum (of 20), mean time per solve:
 

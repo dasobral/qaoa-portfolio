@@ -145,14 +145,14 @@ See [Visualization API](docs/visualization.md) for usage and configuration detai
 - Real market data studies (S&P 500 subset, crypto, mixed) with out-of-sample evaluation
 - `qaoa-portfolio benchmark` CLI subcommand writing reproducible JSON artifacts
 
-**Headline results** (8 assets, select 4, 10 paired instances; full tables and methodology in [Benchmarks](docs/benchmarks.md)):
+**Headline results** (June 2026, Adam preset; 8 assets, select 4, 10 paired instances; full tables and methodology in [Benchmarks](docs/benchmarks.md)). The current COBYLA preset gives QAOA 0.817 with 5/10 optimal at ~4 s per solve on `lightning.qubit` ([Benchmarks §8](docs/benchmarks.md)); `--qaoa-optimizer adam` reproduces the table:
 
 | Solver | Mean quality ratio | Optimal runs | Median time |
 |--------|-------------------:|-------------:|------------:|
 | Brute force (Rust) | 1.000 | 10/10 | < 1 ms |
 | Simulated annealing (Rust) | 1.000 | 10/10 | 0.7 ms |
 | Markowitz top-k (Rust) | 0.886 | 6/10 | 0.1 ms |
-| QAOA (PennyLane, 1 layer) | 0.825 | 3/10 | 23.2 s |
+| QAOA (PennyLane, 1 layer, Adam) | 0.825 | 3/10 | 23.2 s |
 | Random selection | 0.558 | 0/10 | 0.1 ms |
 
 QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exceeding the 15–25 % roadmap target) and is statistically indistinguishable from the classical Markowitz baseline (p ≈ 0.30). On real 2022–2024 data QAOA found the exact QUBO optimum for the crypto and mixed-asset studies.
