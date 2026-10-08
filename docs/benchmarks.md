@@ -464,7 +464,7 @@ with either optimizer.
 The harness options below exist to make the comparisons of §7.5 fairer and to
 explain QAOA failures. They change no default: with every option off, the
 October n = 8 artifact reproduces record for record. No results with them are
-reported in this document yet. Definitions of the metrics are in
+reported in this section; §10 has the first results. Definitions of the metrics are in
 [algorithm.md §4](algorithm.md#4-measuring-quality).
 
 ### 9.1 Simulated-annealing schedules
@@ -509,6 +509,60 @@ pairs records by `(num_assets, seed)` and returns the discordant counts
 uv run qaoa-portfolio benchmark --suite quality --assets 12 --repeats 10 --seed 42 \
   --qaoa-backend lightning.qubit --sa-schedule auto --sa-restarts 4 --qaoa-feasible-decoding
 ```
+
+## 10. Fair baselines: tuned simulated annealing vs QAOA (October 2026)
+
+Does "QAOA reaches the optimum more often than SA" (§7.5) survive a tuned
+baseline? RTX 3080 host, 20 paired instances per size (seeds 42–61, risk 0.5,
+k = n/2), QAOA on the COBYLA preset (`lightning.gpu`), SA on the CPU with the
+`auto` schedule at increasing sweep budgets (§9.1). SA timings were taken while
+the host also ran the QAOA jobs, so treat them as indicative.
+
+Instances solved to the optimum (of 20), mean time per solve:
+
+| n | SA default | SA-auto 10³ sweeps | SA-auto 10⁴ | SA-auto 10⁵ | SA-auto best | QAOA (COBYLA, p = 1) |
+|--:|---|---|---|---|---|---|
+| 12 | 5 (1 ms) | **20** (1.6 ms) | — | — | 20 (1.6 ms) | 12 (10.9 s) |
+| 16 | 0 (1.5 ms) | 11 (3 ms) | **20** (29 ms) | 20 (0.29 s) | 20 (29 ms) | 11 (14.9 s) |
+| 20 | 0 (2 ms) | 3 (5 ms) | 9 (49 ms) | **20** (0.48 s) | 20 (0.48 s) | 10 (17.9 s) |
+| 24 | 0 (3 ms) | 0 (10 ms) | 1 (84 ms) | 12 (0.74 s) | **20** (7.4 s, 10⁶ sweeps) | 11 (58.6 s) |
+
+Exact McNemar tests, QAOA against the cheapest SA setting that solved every
+instance: n = 12 / 16 / 20 / 24 → SA alone solved 8 / 9 / 10 / 9 instances
+that QAOA missed, QAOA none that SA missed; p = 0.008 / 0.004 / 0.002 / 0.004,
+all below 0.05 after a Bonferroni correction over the four sizes. Against the
+default SA, QAOA still wins (e.g. n = 16: 11 vs 0, p = 0.001), which is what
+§7.5 measured.
+
+**Result.** The §7.5 observation holds only against an untuned SA. A tuned SA
+solves every instance at n = 12–24, with significantly more hits than QAOA,
+in 8–7 000× less time.
+
+What the QAOA circuit itself contributes (§9.2 metrics):
+
+- QAOA answers were feasible in 85–95 % of instances; the circuit puts
+  ~0.41–0.43 of its probability on feasible states, about twice the uniform share.
+- The probability of the optimum (p_opt) is small in absolute terms: mean
+  1.9·10⁻³ at n = 12, 1·10⁻⁴ at n = 16 and 24, ~4·10⁻⁵ at n = 20. On solved
+  instances it is 8–35× the uniform value (median), on missed ones ≤ 2×.
+- A QAOA "hit" therefore means the optimum landed among the 64 most probable
+  states that the decoder ranks classically by objective. At n ≤ 6 those 64
+  states are the whole search space, so QAOA always reports the optimum
+  there, whatever the circuit does; at n = 8 they are a quarter of it.
+  Small-n quality numbers (including the §2 headline table) partly measure
+  this decoder, not the circuit.
+
+```bash
+uv run qaoa-portfolio benchmark --assets 20 --repeats 20 --seed 42 \
+  --solvers simulated_annealing --sa-schedule auto --sa-sweeps 100000
+uv run qaoa-portfolio benchmark --assets 20 --repeats 20 --seed 42 \
+  --qaoa-backend lightning.gpu
+```
+
+Next steps are QAOA changes that raise p_opt and the feasible mass
+(constraint-preserving mixers, CVaR objectives, warm starts, a faster cost
+layer), judged on those metrics rather than on hit rate, plus a
+decoder-only control (the best of 64 random feasible states).
 
 ## See Also
 

@@ -162,7 +162,7 @@ QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exc
 - Simulator backends change speed, never results: every backend reproduces the table above exactly.
 - n = 20 QAOA solve: 396 s → 12.7 s on `lightning.gpu` (31×); the June 16 GB peak was `default.qubit` backprop memory, ~17 MB with the lightning backends.
 - Exact simulation now reaches 26 assets on the RTX 3080 and 28 on the DGX Spark (first measured with campaign scripts; the harness now accepts up to 28 assets). The RTX is ~2.8× faster per solve (memory bandwidth); the Spark goes larger (capacity).
-- QAOA reaches the exact optimum at 24–26 assets where the default, untuned simulated annealing does not, but with a lower mean ratio and minutes-to-hours versus milliseconds — not yet a fair comparison.
+- QAOA reaches the exact optimum more often than the default, untuned simulated annealing — but a tuned SA ([Benchmarks §10](docs/benchmarks.md)) solves all 20 paired instances at 12–24 assets in 2 ms–7 s and beats QAOA significantly (McNemar p ≤ 0.008). QAOA's probability on the optimum stays below 0.2 %; its hits come from the optimum landing among the 64 most probable states the decoder ranks.
 - COBYLA beats Adam for this problem: better or equal hit rates at every size except 24 assets (2/5 vs 3/5), at 2.5–12× less time on the same backend. It is now the benchmark preset's optimizer; `--qaoa-optimizer adam` reproduces earlier results.
 
 **Results dashboard:** `python front/build_data.py` bundles every artifact under `results/benchmarks/` (including datasets copied from other hosts) and `front/index.html` displays it — quality, scaling, optimizer budget, depth, market studies, and a run log. Static page, no server needed; see [front/README.md](front/README.md).
@@ -173,7 +173,7 @@ QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exc
 
 ### 🚧 In Development
 
-- **Fair baselines & QAOA tuning (research):** instance-scaled and restarted simulated annealing, feasibility rate and p_opt metrics, McNemar tests on paired hit rates; next: feasibility-preserving moves and ansätze, faster cost layers (see [Benchmarks §8–9](docs/benchmarks.md))
+- **Fair baselines & QAOA tuning (research):** instance-scaled and restarted simulated annealing, feasibility rate and p_opt metrics, McNemar tests on paired hit rates; next: feasibility-preserving moves and ansätze, faster cost layers (see [Benchmarks §8–10](docs/benchmarks.md))
 
 ### Current CLI
 
