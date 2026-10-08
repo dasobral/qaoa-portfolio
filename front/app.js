@@ -112,7 +112,7 @@
   const state = {
     campaigns: new Set(campaigns),
     configs: new Set(configKeys),
-    qualityN: null, scalingPreset: null, depthOp: 'adam', budgetN: null, depthN: null,
+    qualityN: null, qualityOp: 'adam', scalingPreset: null, depthOp: 'adam', budgetN: null, depthN: null,
   };
   const visibleArt = (a) => state.campaigns.has(a.campaign) && state.configs.has(configOf(a)) && (a.status || 'ok') === 'ok';
   const recs = (pred) => R.filter((r) => visibleArt(r.art) && pred(r));
@@ -156,7 +156,8 @@
   const isAdam = (r) => !r.op || r.op === 'adam';
   const OPT_LABEL = { adam: 'Adam', cobyla: 'COBYLA' };
   const optLabel = (o) => OPT_LABEL[o || 'adam'] || o;
-  const isPreset = (r) => r.L === 1 && r.it === 60 && r.rs === 2 && isAdam(r);
+  // Benchmark preset: p = 1, 60 iterations, 2 restarts; Adam until October 2026, COBYLA after.
+  const isPreset = (r, op = 'adam') => r.L === 1 && r.it === 60 && r.rs === 2 && (r.op || 'adam') === op;
   function renderKpis() {
     const okR = R.filter((r) => (r.art.status || 'ok') === 'ok');
     const q8 = okR.filter((r) => r.s === 'qaoa' && r.n === 8 && r.art.suite === 'quality' && isPreset(r));
@@ -182,13 +183,16 @@
   }
 
   /* ---------- 01 quality ---------- */
-  function presetArtifacts(suite) {
+  function presetArtifacts(suite, op) {
     // artifacts whose QAOA records all use the benchmark preset (classical-only artifacts count too)
     const qa = groupBy(R.filter((r) => r.s === 'qaoa'), (r) => r.a);
-    return new Set(A.filter((a) => a.suite === suite && (!qa.has(a.id) || qa.get(a.id).every(isPreset))).map((a) => a.id));
+    return new Set(A.filter((a) => a.suite === suite && (!qa.has(a.id) || qa.get(a.id).every((r) => isPreset(r, op)))).map((a) => a.id));
   }
   function renderQuality() {
-    const ids = presetArtifacts('quality');
+    const ops = ['adam', 'cobyla'].filter((op) => R.some((r) => r.s === 'qaoa' && r.art.suite === 'quality' && isPreset(r, op)));
+    if (!ops.includes(state.qualityOp)) state.qualityOp = ops[0] || 'adam';
+    segmented($('#quality-op'), ops.map((op) => ({ label: `${optLabel(op)} preset`, value: op })), state.qualityOp, (v) => { state.qualityOp = v; renderQuality(); });
+    const ids = presetArtifacts('quality', state.qualityOp);
     const all = recs((r) => ids.has(r.a));
     const ns = [...new Set(all.map((r) => r.n))].sort((a, b) => a - b);
     if (!ns.includes(state.qualityN)) state.qualityN = ns.includes(8) ? 8 : ns[0];

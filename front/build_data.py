@@ -61,9 +61,14 @@ def _record(rec: Dict[str, Any], artifact: int) -> Dict[str, Any]:
     meta = rec.get("metadata") or {}
     solver = rec.get("solver_name")
     is_qaoa = solver == "qaoa"
-    if solver == "brute_force" and (rec.get("num_assets") or 0) > 20:
-        # The Rust brute force refuses n > 20: such records come from a campaign
-        # wrapper's NumPy enumeration, so their timings are not Rust timings.
+    if solver == "brute_force" and (
+        meta.get("method") == "exact_enumeration"
+        or ("method" not in meta and (rec.get("num_assets") or 0) > 20)
+    ):
+        # The Rust brute force refuses n > 20. The harness records its NumPy
+        # enumeration as method "exact_enumeration"; older campaign-wrapper
+        # artifacts carry no method, so n > 20 identifies them. Either way the
+        # timings are not Rust timings.
         solver = "exact_enum"
     return {
         "a": artifact,
