@@ -10,9 +10,9 @@ from qaoa_portfolio import QAOAConfig, QAOAQuantumBackend, solve_qubo_qaoa
 
 Primary objects:
 
-- `QAOAConfig` validates QAOA layers, optimizer, backend, iteration limits, shots, seed, and restart count.
-- `QAOAQuantumBackend.solve(qubo, labels=None)` runs QAOA and returns a `QAOAResult`.
-- `solve_qubo_qaoa(qubo, labels=None, config=None)` is a convenience wrapper around `QAOAQuantumBackend`.
+- `QAOAConfig` validates QAOA layers, optimizer, backend, iteration limits, shots, seed, restart count, the decoding cap, and the optional cardinality settings (`target_assets`, `feasible_decoding`).
+- `QAOAQuantumBackend.solve(qubo, labels=None, reference_bitstrings=None)` runs QAOA and returns a `QAOAResult`; the final probabilities of any `reference_bitstrings` (e.g. the known optimum) are reported in `metadata["reference_probabilities"]`.
+- `solve_qubo_qaoa(qubo, labels=None, config=None, reference_bitstrings=None)` is a convenience wrapper around `QAOAQuantumBackend`.
 - `QAOAResult.to_dict()` returns JSON-safe values for reporting or later visualization.
 
 Helper functions:
@@ -36,10 +36,14 @@ config = QAOAConfig(
     backend="default.qubit",
     num_restarts=2,
     max_stored_solutions=64,
+    target_assets=None,        # k: report probability mass on weight-k states
+    feasible_decoding=False,   # decode among weight-k states only (needs target_assets)
 )
 ```
 
-Supported optimizers are `adam`, `gradient_descent`, `cobyla`, and `nelder_mead`. Supported PennyLane devices are `default.qubit` and `lightning.qubit`. Use `shots=None` for deterministic statevector probabilities in tests and small local experiments.
+`QAOAConfig()` defaults: `layers=3`, `optimizer="adam"`, `max_iterations=100`, `convergence_threshold=1e-6`, `shots=None`, `seed=42`, `backend="default.qubit"`, `num_restarts=3`, `max_stored_solutions=64`. The benchmark harness uses its own preset (p = 1, COBYLA, 60 iterations, 2 restarts; see [benchmarks.md](benchmarks.md)).
+
+Supported optimizers are `adam`, `gradient_descent` (PennyLane, step size 0.01, stop after 5 consecutive steps with a cost change below `convergence_threshold`), `cobyla`, and `nelder_mead` (`scipy.optimize.minimize` with `maxiter=max_iterations`). Supported PennyLane devices are `default.qubit`, `lightning.qubit` (CPU, installed with the dev extra), and `lightning.gpu` (NVIDIA CUDA; install with `uv sync --extra dev --extra gpu` on Linux with Python ≥ 3.11). All three return identical results; the `lightning.*` devices are faster and use adjoint differentiation instead of backpropagation, which cuts memory sharply (measurements in [benchmarks.md §7](benchmarks.md#7-october-2026-campaign--rtx-3080-and-dgx-spark-gb10)). Use `shots=None` for exact statevector probabilities; a finite `shots` value makes the device estimate them from samples (the full statevector is still simulated).
 
 `max_stored_solutions` (default 64) caps how many of the most probable basis states are kept in `QAOAResult.probabilities` and considered for ranking — the full 2ⁿ distribution grows exponentially and is never needed downstream. For n ≤ 6 the default keeps every state, so small-instance behavior is exact.
 
@@ -81,7 +85,9 @@ The mixer Hamiltonian is the standard X-mixer with one Pauli-X term per wire.
 - `convergence_history`
 - `iterations`, `elapsed_ms`, and `metadata`
 
-Top solutions are ranked by original QUBO objective value ascending, among the `max_stored_solutions` most probable basis states (`probabilities` carries exactly that capped set; the cap is echoed in `metadata["max_stored_solutions"]`).
+Top solutions are ranked by original QUBO objective value ascending, among the `max_stored_solutions` most probable basis states (`probabilities` carries exactly that capped set; the cap is echoed in `metadata["max_stored_solutions"]`). `top_solutions` holds the first 10 ranked entries and `best_*` the first one. With `feasible_decoding=True` the candidate set is restricted to states with exactly `target_assets` selected assets before the cap is applied, so the answer always selects `target_assets` assets.
+
+`metadata` keys: `backend`, `optimizer`, `layers`, `shots`, `num_restarts`, `max_stored_solutions`, `num_variables`, `offset`, `source` (input type), `expected_cost` (final ⟨H_C⟩), and `hamming_weight_distribution` (probability mass per number of selected assets, index 0..n). With `target_assets` set it adds `feasible_probability` (mass on weight-k states); with `reference_bitstrings` it adds `reference_probabilities`.
 
 ## End-to-End Example
 
@@ -125,4 +131,11 @@ python -m maturin build --features python-bindings
 
 ## Current Limits
 
-The backend targets simulator-backed QAOA and binary include/exclude portfolio selection. Visualization, large benchmark studies, and alternative mixers are deferred to later roadmap phases.
+The backend targets simulator-backed QAOA and binary include/exclude portfolio selection with the standard X-mixer. Exact statevector simulation bounds the size: the benchmark harness accepts at most 28 assets, and a sampling-based pipeline beyond that is not implemented. Constraint-preserving mixers are not implemented; the cardinality constraint is a QUBO penalty, and feasible decoding only filters the decoded candidates.
+
+## See Also
+
+- [Algorithm](algorithm.md) — the Hamiltonian mapping, ansatz, optimizer loop, and decoding rule as equations.
+- [API reference](api_reference.md#10-quantum-backend-qaoa_portfolioquantum_backend) — signatures.
+- [Usage guide §5](usage_guide.md#5-solve-with-qaoa) — runnable walkthrough.
+- [Visualization](visualization.md) and [benchmarks](benchmarks.md) — consumers of `QAOAResult`.

@@ -1,6 +1,6 @@
 # Testing Manual
 
-This manual describes how to test the current QAOA Portfolio Optimizer implementation. As of Phase 4, the core path and the visualization layer are implemented: mock or market price data can flow into the Rust QUBO builder, classical Rust baselines, the PennyLane QAOA backend, and the Phase 4 plotting helpers. Phase 5 and later are mainly benchmarking and presentation layers, so they should add coverage without weakening the core gates below.
+This manual describes how to test the QAOA Portfolio Optimizer. The full pipeline is implemented: mock or market price data flows into the Rust QUBO builder, the classical Rust baselines, the PennyLane QAOA backend, the plotting helpers, and the benchmark harness. Documentation and example scripts are covered by their own checks (Section 1). New work should add coverage without weakening the core gates below.
 
 ## 1. Test Scope
 
@@ -10,13 +10,14 @@ The test suite is modular:
 - Phase 2 Rust core: portfolio data structures, QUBO construction, classical solvers, and PyO3 bridge.
 - Phase 3 quantum backend: QUBO normalization, Hamiltonian construction, QAOA optimization, solution ranking, and Rust-to-QAOA integration.
 - Phase 4 visualization: config validation, result normalization, chart-data helpers, headless Matplotlib/Plotly figure creation, and QAOA-result-to-figure integration.
-- Phase 5 benchmarks: config/record validation, solver adapters, paired quality/scaling/depth suites, Wilcoxon significance testing, market studies (network-marked), and the `qaoa-portfolio benchmark` CLI artifact flow.
+- Phase 5 benchmarks: config/record validation, solver adapters, paired quality/scaling/depth suites, Wilcoxon and McNemar significance tests, simulated-annealing schedules (`SAConfig`, `auto_sa_schedule`), feasibility and `p_opt` metrics, exact enumeration above 20 assets, QAOA feasible decoding, market studies (network-marked), and the `qaoa-portfolio benchmark` CLI artifact flow.
+- Phase 6 documentation and examples: `tests/test_docs.py` checks that `docs/api_reference.md` names every public symbol (`qaoa_portfolio.__all__` and `qaoa_portfolio_core.__all__`) and that public docs link no private files; `tests/test_examples.py` smoke-tests the scripts in `examples/`.
 - Full core integration: mock market data -> Rust QUBO -> QAOA result -> figures -> benchmark records.
 
 Current non-core gaps:
 
 - The default CLI command validates market-data loading; the `benchmark` subcommand covers the full QUBO-to-QAOA solve path.
-- Shot-based sampling for portfolios beyond 20 assets is an unimplemented stretch goal (spec §3.5).
+- A sampling-based QAOA pipeline for portfolios beyond the exact-simulation cap (28 assets) is not implemented.
 
 ## 2. Environment Setup
 
@@ -43,15 +44,13 @@ For one-off commands without exporting first, prefix the command:
 UV_PROJECT_ENVIRONMENT=qaoa-env uv run pytest
 ```
 
-For Codex-agent shell work, prefix commands with `rtk`, for example `rtk env UV_PROJECT_ENVIRONMENT=qaoa-env uv run pytest`.
-
 ## 3. Pytest Configuration
 
 `pytest.ini` is the authoritative pytest configuration. It defines:
 
 - Test discovery under `tests/`
 - File pattern `test_*.py`
-- Strict markers: `unit`, `integration`, `slow`, `network`, and `performance`. Every suite carries a module-level `pytestmark`, so `uv run pytest -m unit` and `-m integration` select real subsets; `slow`/`network`/`performance` are reserved for Phase 5 benchmarks and currently select nothing.
+- Strict markers: `unit`, `integration`, `slow`, `network`, and `performance`. Every suite carries a module-level `pytestmark` (or per-class `unit` marks in `tests/test_visualization.py`), so `uv run pytest -m unit` and `-m integration` select real subsets. `network` marks the live Yahoo Finance market-study test in `tests/test_benchmarks_integration.py` (deselect it with `-m "not network"`); `slow` marks the 12-asset end-to-end benchmark test in the same file; `performance` is currently unused.
 - Verbose output, short tracebacks, disabled warnings, and slowest-test durations
 
 If pytest prints a warning about ignoring pytest config in `pyproject.toml`, that is expected because `pytest.ini` takes precedence.
@@ -96,6 +95,18 @@ Run Phase 4 visualization tests (headless, Matplotlib `Agg`):
 
 ```bash
 uv run pytest tests/test_visualization.py
+```
+
+Run Phase 5 benchmark tests (the offline gate skips the live market study):
+
+```bash
+uv run pytest tests/test_benchmarks.py tests/test_benchmarks_integration.py -m "not network"
+```
+
+Run the documentation and example checks:
+
+```bash
+uv run pytest tests/test_docs.py tests/test_examples.py -m "not network"
 ```
 
 Run formatting checks:
@@ -174,7 +185,7 @@ print(result.objective_value)
 PY
 ```
 
-This is the best current approximation of a full application test because it exercises all implemented core layers without relying on live market data or future visualization modules.
+This is the best current approximation of a full application test because it exercises all core layers without relying on live market data. The [usage guide](usage_guide.md) walks through the same path, plus plotting and benchmarking, with runnable blocks.
 
 ## 6. Full Verification Gate
 
@@ -191,10 +202,10 @@ uv run black --check qaoa_portfolio tests
 uv run pytest
 ```
 
-Expected current baseline after Phase 5 (June 2026):
+Expected current baseline (Phase 6, October 2026):
 
-- `uv run pytest`: 243 tests passing with `qaoa_portfolio_core` installed by uv (242 with `-m "not network"`; selectable via `-m unit` / `-m integration`).
-- `uv run pytest --cov=qaoa_portfolio -m "not network"`: 88% total coverage (network-marked market-study paths excluded).
+- `uv run pytest`: 355 tests with `qaoa_portfolio_core` installed by uv; `-m "not network"` runs 352 and deselects the 3 live-network tests (one market study, two live examples). Subsets are selectable via `-m unit` / `-m integration`.
+- `uv run pytest --cov=qaoa_portfolio -m "not network"`: about 90% total coverage (network-marked market-study paths excluded).
 - `uv run flake8 qaoa_portfolio tests`: no findings (configured by `.flake8`, 88 columns, black-compatible).
 - `cargo test`: 13 Rust tests passing.
 - `cargo test --features python-bindings`: 13 Rust tests passing.
@@ -252,6 +263,12 @@ If a generated or ignored directory appears in status, do not treat it as source
 
 Phase 4 visualization tests live in `tests/test_visualization.py` and use the Matplotlib `Agg` backend. They verify chart data and returned figure objects rather than pixel-perfect images; follow the same pattern when extending them.
 
-Phase 5 benchmark tests should separate correctness from performance. Correctness can run in normal pytest; long-running timing studies should use `slow` or `performance` markers and should not block quick development loops unless explicitly requested.
+Benchmark tests separate correctness from performance. Correctness runs in normal pytest with tiny QAOA settings; long-running timing studies use `slow` or `performance` markers and should not block quick development loops unless explicitly requested.
 
-Any phase that changes public behavior should update this manual, the relevant feature docs, and the project roadmap if phase status or deliverables change.
+Any change to public behavior should update this manual, the relevant feature docs, and `docs/api_reference.md` (the docs test fails when a new public name is missing from it).
+
+## See Also
+
+- [Usage guide](usage_guide.md) — install and task walkthroughs, including troubleshooting.
+- [API reference](api_reference.md) — the public surface the docs test checks.
+- [Benchmarks](benchmarks.md) — what the benchmark suites measure.

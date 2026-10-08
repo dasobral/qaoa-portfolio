@@ -105,7 +105,7 @@ def get_market_data_summary(data: pd.DataFrame) -> Dict
 
 #### `load_sp500_symbols()`
 
-Load complete S&P 500 symbol list from Wikipedia.
+Load the S&P 500 symbol list from Wikipedia (dots replaced by dashes for Yahoo Finance; falls back to a short built-in large-cap list when the page cannot be read).
 
 ```python
 from qaoa_portfolio.portfolios import load_sp500_symbols
@@ -149,7 +149,7 @@ Create sample cryptocurrency portfolio.
 from qaoa_portfolio.portfolios import create_sample_crypto_portfolio
 
 crypto_portfolio = create_sample_crypto_portfolio(size=5)
-# Returns: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'ADA-USD', 'DOT-USD']
+# Returns: ['BTC-USD', 'ETH-USD', 'BNB-USD', 'XRP-USD', 'ADA-USD']
 ```
 
 ### Mixed Portfolios
@@ -252,7 +252,7 @@ recommendations = get_free_tier_recommendations()
 
 #### `setup_free_tier_environment()`
 
-Display free-tier configuration information (called automatically on import).
+Print a free-tier configuration summary (nothing when `logging.show_free_tier_tips` is false). It is not called automatically; `MarketDataLoader()` logs a similar summary when `logging.show_free_tier_tips` is enabled.
 
 ```python
 from qaoa_portfolio.data_loader import setup_free_tier_environment
@@ -314,9 +314,10 @@ except MarketDataError as e:
 
 ### Caching System
 
-- Configurable cache duration (default: 7 days)
-- Automatic cache expiration
-- Cache corruption handling
+- One CSV file per symbol and window: `data/cache/<SYMBOL>_yfinance_<start>_<end>.csv`, relative to the working directory
+- Configurable cache duration (default: 7 days); expired files are deleted and re-downloaded
+- Unreadable cache files are deleted and re-downloaded
+- `quick_portfolio_load` and the CLI derive the window from the current time, so they miss the cache on a new day; fixed `start_date`/`end_date` windows reuse it
 
 ### Rate Limiting
 
@@ -360,7 +361,9 @@ price_data, returns, summary = asyncio.run(analyze_portfolio())
 ### Crypto Portfolio Analysis
 
 ```python
-from qaoa_portfolio.portfolios import create_sample_crypto_portfolio, quick_portfolio_load
+import asyncio
+
+from qaoa_portfolio.portfolios import quick_portfolio_load
 
 async def crypto_analysis():
     # Quick crypto portfolio load
@@ -377,7 +380,9 @@ price_data, returns = asyncio.run(crypto_analysis())
 ### Mixed Asset Portfolio
 
 ```python
-from qaoa_portfolio.portfolios import create_mixed_portfolio
+import asyncio
+
+from qaoa_portfolio.portfolios import create_mixed_portfolio, quick_portfolio_load
 
 async def mixed_analysis():
     # Create mixed portfolio
@@ -405,3 +410,9 @@ Key configuration parameters (automatically loaded):
 - `logging.show_free_tier_tips`: Display setup information
 
 Configuration is managed through the `config` system and can be modified as needed for different use cases.
+
+## See Also
+
+- [Usage guide §2](usage_guide.md#2-load-market-data) — runnable loading walkthrough and troubleshooting (rate limits, cache).
+- [API reference](api_reference.md#2-data-loading-qaoa_portfoliodata_loader) — signatures of the loader, presets, and validators.
+- [Algorithm §1](algorithm.md#1-portfolio-selection-as-optimization) — how loaded prices become returns and covariance for the QUBO.

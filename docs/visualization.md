@@ -68,7 +68,7 @@ plot_efficient_frontier(frontier_points, selected_portfolio=None, config=None)
 
 - **Composition** renders a pie chart. Weights default to equal allocation; provided weights must be positive, match the asset count, and are normalized to sum to one.
 - **Risk-return scatter** plots annualized volatility against annualized return per asset, computed with `FinancialMetrics` using 252 trading periods per year (simple returns, compound annualization — the reporting convention; see "Return and Annualization Conventions" in `docs/rust_core.md` for how this differs from the Rust QUBO layer's log-return convention). `highlighted_assets` must be a subset of the return columns and are starred in red.
-- **Correlation heatmap** renders `returns.corr()` with asset labels on both axes (Seaborn annotated heatmap for 12 or fewer assets).
+- **Correlation heatmap** renders `returns.corr()` with asset labels on both axes (Seaborn heatmap with the matplotlib backend, cells annotated with values for 12 or fewer assets; a Plotly heatmap with `backend="plotly"`).
 - **Efficient frontier** requires `return` and `volatility` columns in `frontier_points`; an optional `sharpe_ratio` column colors the points. `selected_portfolio` must provide `return` and `volatility` keys and is marked with a star.
 
 `returns` is a DataFrame with one column per asset symbol containing periodic returns, e.g. from `FinancialMetrics.calculate_returns(price_data)`.
@@ -82,10 +82,10 @@ plot_top_solutions(result, config=None)
 render_qaoa_circuit_summary(result)
 ```
 
-- **Convergence** plots the full `convergence_history` against the iteration index.
+- **Convergence** plots the full `convergence_history` (best-so-far expected cost of the winning restart) against the iteration index.
 - **Solution probabilities** sorts bitstrings by probability descending and shows the top `config.max_solutions` entries.
 - **Top solutions** sorts records by objective value ascending, caps them at `config.max_solutions`, and labels each bar with the selected assets.
-- **Circuit summary** returns a text description (qubits, layers, optimizer, optimal parameters, structure, and best solution). Rendered circuit diagrams are deferred to Phase 6 by design.
+- **Circuit summary** returns a text description (qubits, layers, optimizer, device backend, optimal parameters, structure, and best solution). Rendered circuit diagrams are not part of the library.
 
 ## Solver Comparison
 
@@ -172,4 +172,11 @@ python -m maturin build --features python-bindings
 
 ## Current Limits
 
-Phase 4 covers reusable plotting functions only. Dashboards, notebook walkthroughs, rendered quantum circuit diagrams, and large benchmarking studies are deferred to Phases 5 and 6.
+The module provides reusable plotting functions only; it renders no circuit diagrams. Benchmark studies live in [benchmarks.md](benchmarks.md) (the CLI's `benchmark --plot` uses `plot_solver_comparison`), and end-to-end walkthroughs with saved figures are in the [usage guide](usage_guide.md#6-visualize) and [`examples/`](../examples/README.md).
+
+## See Also
+
+- [Usage guide §6](usage_guide.md#6-visualize) — runnable plotting walkthrough.
+- [API reference](api_reference.md#11-visualization-qaoa_portfoliovisualization) — signatures.
+- [Quantum backend](quantum_backend.md) — the `QAOAResult` fields these plots read.
+- [Algorithm](algorithm.md) — what the probabilities and convergence history mean.

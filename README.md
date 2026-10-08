@@ -6,6 +6,41 @@ A high-performance implementation of the Quantum Approximate Optimization Algori
 
 This project showcases how quantum-inspired algorithms can solve complex portfolio optimization problems that are challenging for classical methods. By implementing QAOA with classical simulation, we bridge the gap between current optimization capabilities and future quantum computing advantages.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Y[Yahoo Finance<br/>MarketDataLoader] --> P[Price matrix]
+    S[Synthetic prices<br/>benchmarks] --> P
+    P --> Q[QUBO formulation<br/>Rust core · build_qubo]
+    Q --> C[Classical solvers<br/>brute force · SA · Markowitz]
+    Q --> H[Cost Hamiltonian<br/>PennyLane]
+    H --> A[QAOA ansatz + optimizer<br/>default.qubit · lightning.qubit · lightning.gpu]
+    A --> D[Decoding<br/>ranked / feasible bitstrings]
+    C --> R[Selected portfolio]
+    D --> R
+    R --> V[Visualization]
+    R --> B[Benchmark harness<br/>JSON artifacts]
+    B --> F[front/ dashboard]
+```
+
+Python owns data, the quantum backend, benchmarks and plots; the Rust crate (`qaoa_portfolio_core`, built by maturin through PyO3) owns return statistics, QUBO construction and the classical baselines.
+
+## Documentation
+
+- [Usage guide](docs/usage_guide.md) — install, then one task per chapter: load data, build a QUBO, solve classically and with QAOA, visualize, benchmark.
+- [Algorithm](docs/algorithm.md) — the mathematics: Markowitz → QUBO → cost Hamiltonian → QAOA → decoding, and how quality is measured.
+- [API reference](docs/api_reference.md) — every public Python name and the Rust bridge surface.
+- Module guides: [data loader](docs/dataloader.md), [Rust core](docs/rust_core.md), [quantum backend](docs/quantum_backend.md), [visualization](docs/visualization.md), [benchmarks](docs/benchmarks.md), [testing](docs/testing_manual.md), [running on a DGX Spark](docs/running-on-dgx-spark.md).
+
+## Examples
+
+Runnable scripts with matching notebooks live in [`examples/`](examples/README.md): a 4-asset walkthrough, a crypto portfolio, a QAOA-vs-classical mini-benchmark, and a live-market demo.
+
+```bash
+UV_PROJECT_ENVIRONMENT=qaoa-env uv run python examples/01_basic_four_assets.py
+```
+
 ## Quick Start
 
 ### Prerequisites
@@ -104,7 +139,7 @@ See [Visualization API](docs/visualization.md) for usage and configuration detai
 ### ✅ Benchmarking & Performance (Completed)
 
 - Seeded, paired benchmark harness comparing QAOA against brute force, simulated annealing, Markowitz top-k, and random selection
-- Approximation-ratio quality metric with paired Wilcoxon significance testing
+- Approximation-ratio quality metric with paired Wilcoxon tests, plus feasibility rate, probability on the optimum (p_opt) and McNemar tests on paired hit rates
 - Time/memory scaling studies across 4–28 assets and QAOA depths 1–10 (exact reference optimum at every size: Rust brute force up to 20 assets, chunked enumeration above)
 - Selectable simulator backend (`--qaoa-backend`: `default.qubit`, `lightning.qubit`, `lightning.gpu`), benchmarked on an RTX 3080 and an NVIDIA DGX Spark (GB10)
 - Real market data studies (S&P 500 subset, crypto, mixed) with out-of-sample evaluation
@@ -132,9 +167,13 @@ QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exc
 
 **Results dashboard:** `python front/build_data.py` bundles every artifact under `results/benchmarks/` (including datasets copied from other hosts) and `front/index.html` displays it — quality, scaling, optimizer budget, depth, market studies, and a run log. Static page, no server needed; see [front/README.md](front/README.md).
 
+### ✅ Polish & Presentation (Completed)
+
+- Algorithm, usage, and API reference documentation; worked examples and notebooks; architecture diagram
+
 ### 🚧 In Development
 
-- **Polish & Presentation:** Documentation, examples, and demos (Phase 6)
+- **Fair baselines & QAOA tuning (research):** instance-scaled and restarted simulated annealing, feasibility rate and p_opt metrics, McNemar tests on paired hit rates; next: feasibility-preserving moves and ansätze, faster cost layers (see [Benchmarks §8–9](docs/benchmarks.md))
 
 ### Current CLI
 
@@ -159,8 +198,7 @@ UV_PROJECT_ENVIRONMENT=qaoa-env uv run qaoa-portfolio benchmark --suite quality 
 ### Current Limits
 
 - The benchmark harness caps portfolios at 28 assets (`MAX_EXACT_ASSETS`), the largest exact simulation measured (DGX Spark; 26 on a 10 GB RTX 3080). Beyond ~30 assets a shot-based sampling mode is required.
-- Visualization covers reusable plotting functions and the static results dashboard in `front/`; notebook walkthroughs are deferred to later phases.
-- Rendered quantum circuit diagrams are text-only summaries until Phase 6.
+- Rendered quantum circuit diagrams are text-only summaries.
 
 ### 📋 Planned Components
 

@@ -36,7 +36,7 @@ identical instance for repeat *i* (seed = base seed + *i*).
 | Solver | Implementation | Notes |
 |--------|----------------|-------|
 | `brute_force` | Rust, exhaustive (n ≤ 20); NumPy enumeration (n > 20) | Defines the per-instance optimum; records name the method in `metadata.optimum_reference` |
-| `simulated_annealing` | Rust, seeded | Default schedule |
+| `simulated_annealing` | Rust, seeded | Default Rust schedule unless `SAConfig` / `--sa-*` select the instance-scaled schedule or restarts (§9) |
 | `markowitz` | Rust continuous + top-k | Selects the `target_assets` largest weights, then evaluates on the QUBO |
 | `random` | Python, seeded | Uniform cardinality-constrained sample — the floor any optimizer must beat |
 | `qaoa` | PennyLane statevector | Benchmark default: 1 layer, COBYLA, ≤60 iterations, 2 restarts (Adam before §8) |
@@ -62,7 +62,9 @@ the mapping is strictly monotone in the gap.
 
 `significance_test` runs a **paired Wilcoxon signed-rank test** on
 approximation ratios over identical instances. With fewer than ~10 repeats
-the p-values are indicative only. Timings are wall-clock per solver call
+the p-values are indicative only. `mcnemar_test` compares paired
+optimal-hit outcomes with an exact McNemar test, and every record carries a
+feasibility flag (plus `p_opt` for QAOA) — see §9. Timings are wall-clock per solver call
 (`time.perf_counter`); Python-side peak memory comes from `tracemalloc`
 (QAOA and random baselines only — Rust-internal allocations are invisible
 to it; pure-Rust numbers come from `cargo bench`).
@@ -374,7 +376,7 @@ How to read this table:
   cardinality-feasible set, so the budget penalty is a barrier for this move
   set. "QAOA reaches the optimum more often than SA" is therefore a statement
   about this default configuration only; a tuned, time-matched SA comparison
-  has not been run yet.
+  has not been run yet (the harness options for it are described in §9).
 - **Samples at n ≥ 22 are small** (1–5 instances); no significance test is
   meaningful there.
 - Markowitz top-k is the strongest classical heuristic at n = 16–20.
@@ -456,3 +458,61 @@ claims (the COBYLA n = 12 seed matches the October E4c run, 1.000 in 5.8 s).
 At n = 8 COBYLA solves more instances to the optimum but its mean ratio is
 slightly lower: the bimodal pattern of §7.5 (optimum or far off) persists
 with either optimizer.
+
+## 9. Fair-baseline and QAOA diagnostics options
+
+The harness options below exist to make the comparisons of §7.5 fairer and to
+explain QAOA failures. They change no default: with every option off, the
+October n = 8 artifact reproduces record for record. No results with them are
+reported in this document yet. Definitions of the metrics are in
+[algorithm.md §4](algorithm.md#4-measuring-quality).
+
+### 9.1 Simulated-annealing schedules
+
+`BenchmarkConfig.sa` takes an `SAConfig` (CLI: `--sa-*` flags):
+
+| Setting | CLI | Meaning |
+|---|---|---|
+| `schedule="default"` | `--sa-schedule default` | The Rust solver's built-in schedule (T0 = 100, cooling 0.995 per move, 10 000 single-flip moves), one run seeded by the instance seed — the Phase 5 baseline. |
+| `schedule="auto"` | `--sa-schedule auto` | Instance-scaled schedule from `auto_sa_schedule`: sample 200 single-flip energy changes around a random feasible state, take the median uphill change Δ, and set T0 = −Δ / ln 0.8 and T_final = −Δ / ln 0.001 (a median uphill move is accepted with probability 0.8 at the start and 0.001 at the end), geometric cooling over `sweeps · n` moves. |
+| `sweeps` | `--sa-sweeps` (1000) | Moves per variable for the `auto` schedule. |
+| `restarts` | `--sa-restarts` (1) | Independent runs with seeds `seed · 1000 + r`; the best objective is kept and the move counts are summed. |
+| `initial_temperature`, `cooling_rate`, `max_iterations` | `--sa-iterations` (move count only) | Explicit overrides of either schedule. |
+
+SA records store the schedule actually used in `metadata` (`schedule`,
+`restarts`, the temperature/cooling/move settings, and for `auto` the
+`sweeps` and `median_uphill_delta`).
+
+### 9.2 Feasibility, p_opt, and feasible decoding
+
+- Every record has `metadata.feasible` — whether the selection holds exactly
+  `target_assets` assets; `summarize_quality` reports `feasibility_rate`.
+- QAOA records add `p_opt` (final probability of the exact optimum bitstring)
+  and `feasible_probability` (probability mass on states with exactly
+  `target_assets` assets); the summary reports `mean_p_opt` and
+  `mean_feasible_probability`. Together they separate two ways a QAOA run
+  can miss: little mass on the feasible states, or feasible mass spread away
+  from the optimum.
+- `--qaoa-feasible-decoding` (`QAOAConfig.feasible_decoding`) decodes among
+  the most probable feasible states only, so QAOA answers are always feasible;
+  records then carry `metadata.feasible_decoding = true`.
+
+### 9.3 McNemar test on hit rates
+
+QAOA answers are close to binary (optimum or far off, §7.5), so comparing
+*how often* two solvers hit the optimum is often more informative than
+comparing mean ratios. `mcnemar_test(records, "qaoa", "simulated_annealing")`
+pairs records by `(num_assets, seed)` and returns the discordant counts
+(`only_a`, `only_b`), hit totals, and the exact two-sided p-value.
+
+```bash
+uv run qaoa-portfolio benchmark --suite quality --assets 12 --repeats 10 --seed 42 \
+  --qaoa-backend lightning.qubit --sa-schedule auto --sa-restarts 4 --qaoa-feasible-decoding
+```
+
+## See Also
+
+- [Algorithm](algorithm.md) — QUBO, QAOA, and the approximation ratio, feasibility, Wilcoxon, and McNemar definitions.
+- [Usage guide §7](usage_guide.md#7-benchmark) — running the harness from Python and the CLI.
+- [API reference § Benchmarks](api_reference.md#12-benchmarks-qaoa_portfoliobenchmarks) and [§ CLI](api_reference.md#13-command-line-interface-qaoa-portfolio) — every function and flag.
+- [Running on a DGX Spark](running-on-dgx-spark.md) — GPU host setup for the campaigns.

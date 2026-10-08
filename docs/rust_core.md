@@ -47,11 +47,11 @@ let qubo = QUBOFormulation::new(0.5, 3)?.build(&returns)?;
 let objective = qubo.evaluate(&[true, false, true, true])?;
 ```
 
-`QUBOFormulation::build_from_params` accepts precomputed covariance, expected returns, and labels. `PenaltyBuilder::budget` adds the exact-cardinality constraint `(sum(x) - k)^2`; `position_limit` and `diversity` provide optional concentration and diversification shaping terms.
+`QUBOFormulation::build_from_params` accepts precomputed covariance, expected returns, and labels. The objective entries are `q·Σ_ii − (1 − q)·μ_i` on the diagonal and `q·Σ_ij` per off-diagonal pair (counted once under the upper-triangle convention, i.e. half the cross-term weight of the textbook `q·xᵀΣx`). `PenaltyBuilder::budget` adds the exact-cardinality constraint `λ(sum(x) - k)^2`; unless `with_budget_penalty` sets λ explicitly, λ = 2 × the largest absolute objective coefficient (1.0 if all are zero). `position_limit` and `diversity` provide optional concentration and diversification shaping terms; the Python bridge does not expose them. The full derivation is in [algorithm.md §2](algorithm.md#2-qubo-encoding).
 
 ## Solvers
 
-`BruteForceSolver::solve` enumerates all solutions up to 20 variables. `solve_constrained` evaluates only bitstrings with exactly `k` selected assets. `SimulatedAnnealing` provides a seeded heuristic solver with configurable temperature, cooling rate, and iteration count. `MarkowitzSolver` computes continuous min-variance and max-Sharpe baselines from `ReturnSeries`.
+`BruteForceSolver::solve` enumerates all solutions up to 20 variables (in parallel with rayon above 12). `solve_constrained` evaluates only bitstrings with exactly `k` selected assets (Rust only; the bridge exposes the unconstrained solver). `SimulatedAnnealing` is a single-bit-flip Metropolis solver from a random start with configurable initial temperature (default 100), geometric cooling rate (default 0.995 per move), move count (default 10 000), and seed (default: from entropy). `MarkowitzSolver` computes continuous min-variance and max-Sharpe baselines (risk-free rate 0.02, pseudo-inverse fallback for singular covariance) from `ReturnSeries`.
 
 All solvers return `OptimizationResult` or `ContinuousResult` with selected assets, objective value, solver metadata, and JSON serialization where applicable.
 
@@ -73,3 +73,10 @@ python -m maturin build --features python-bindings
 The extension exposes `build_qubo(prices, symbols, risk_aversion, target_assets)`, `solve_brute_force(qubo)`, `solve_simulated_annealing(qubo, ...)`, and `solve_markowitz(prices, symbols)`. Errors map to Python `ValueError`, `RuntimeError`, or `qaoa_portfolio_core.OptimizationError`.
 
 Classes: `PyQUBOMatrix` (`num_variables`, `offset`, `evaluate(solution)`, `to_numpy()`, `to_list()`), `PyOptimizationResult` (`solution`, `objective_value`, `selected_assets`, `solver_name`, `iterations`, `to_dict()`), and `PyReturnSeries(symbols, log_returns)` — exposes the Rust-side statistics the QUBO is built from (`num_periods`, `num_assets`, `mean_returns()` annualized as mean × 252, `covariance_matrix()`), so Python code can inspect or cross-check the Rust conventions above. The Rust `Asset`/`Portfolio` structs have no Python wrappers: the pipeline passes price arrays and symbol lists instead (the earlier `PyAsset`/`PyPortfolio` scaffold was removed in Phase 6).
+
+## See Also
+
+- [Algorithm](algorithm.md) — the Markowitz → QUBO derivation, penalty calibration, and notation table.
+- [API reference § Rust bridge](api_reference.md#14-rust-bridge-qaoa_portfolio_core) — Python signatures.
+- [Usage guide §3–4](usage_guide.md#3-build-a-qubo) — building and solving a QUBO from Python.
+- [Benchmarks](benchmarks.md) — how the classical solvers serve as baselines.
