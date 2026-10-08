@@ -214,6 +214,11 @@ class QAOAQuantumBackend:
             labels=labels,
         )
         num_wires = matrix.shape[0]
+        if self.config.feasible_decoding and self.config.target_assets > num_wires:
+            raise QuantumBackendError(
+                f"target_assets={self.config.target_assets} exceeds the "
+                f"{num_wires} variables; no feasible state exists"
+            )
         cost_hamiltonian = build_cost_hamiltonian(matrix, offset)
         mixer_hamiltonian = build_mixer_hamiltonian(num_wires)
 

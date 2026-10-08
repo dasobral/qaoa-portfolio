@@ -97,6 +97,8 @@ _LAZY_EXPORTS.update(
             "run_market_study",
             "summarize_quality",
             "significance_test",
+            "mcnemar_test",
+            "SAConfig",
             "save_benchmark_results",
         )
     }
@@ -225,5 +227,7 @@ __all__ = [
     "run_market_study",
     "summarize_quality",
     "significance_test",
+    "mcnemar_test",
+    "SAConfig",
     "save_benchmark_results",
 ]

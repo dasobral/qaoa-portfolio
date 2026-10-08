@@ -83,6 +83,7 @@ class TestBenchmarkConfig:
             {"repeats": 0},
             {"periods": 59},
             {"risk_factor": 0.0},
+            {"risk_factor": 2.0},
             {"risk_factor": float("nan")},
         ]
         for overrides in invalid:

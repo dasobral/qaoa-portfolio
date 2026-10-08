@@ -180,8 +180,9 @@ class BenchmarkConfig:
                 f"periods must be at least {MIN_BENCHMARK_PERIODS} "
                 "for stable covariance estimates"
             )
-        if not math.isfinite(self.risk_factor) or self.risk_factor <= 0:
-            raise BenchmarkError("risk_factor must be a positive finite number")
+        if not math.isfinite(self.risk_factor) or not 0 < self.risk_factor <= 1:
+            # The Rust QUBO formulation accepts risk aversion in [0, 1].
+            raise BenchmarkError("risk_factor must be in (0, 1]")
 
 
 @dataclass(frozen=True)
@@ -543,14 +544,15 @@ def significance_test(
 ) -> Dict[str, Any]:
     """Paired Wilcoxon signed-rank test on approximation ratios.
 
-    Records are paired by (num_assets, run_index), i.e. identical problem
-    instances. With fewer than ~10 pairs the p-value is indicative only.
+    Records are paired by (num_assets, seed), i.e. identical problem
+    instances (the same key as `mcnemar_test`). With fewer than ~10 pairs
+    the p-value is indicative only.
     """
 
     pairs: Dict[Tuple[int, int], Dict[str, float]] = {}
     for record in records:
         if record.solver_name in (solver_a, solver_b):
-            key = (record.num_assets, record.run_index)
+            key = (record.num_assets, record.seed)
             pairs.setdefault(key, {})[record.solver_name] = record.approximation_ratio
 
     ratios_a = []

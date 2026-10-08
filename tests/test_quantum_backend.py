@@ -261,6 +261,10 @@ def test_feasible_decoding_requires_target_assets():
         QAOAConfig(feasible_decoding=True)
     with pytest.raises(QuantumBackendError):
         QAOAConfig(target_assets=-1)
+    with pytest.raises(QuantumBackendError, match="no feasible state"):
+        solve_qubo_qaoa(
+            TOY_QUBO, config=QAOAConfig(target_assets=3, feasible_decoding=True)
+        )
 
 
 def test_feasibility_metadata_and_feasible_decoding():
