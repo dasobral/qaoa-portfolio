@@ -80,6 +80,60 @@ _DEFAULT_BENCH_QAOA = QAOAConfig(
 )
 
 
+@dataclass(frozen=True)
+class SAConfig:
+    """Simulated-annealing settings for the benchmark harness.
+
+    The default reproduces the Phase 5 baseline exactly: the Rust solver's
+    built-in schedule (T0 = 100, cooling 0.995 per move, 10 000 single-flip
+    moves) with one run seeded by the instance seed.
+
+    ``schedule="auto"`` scales the schedule to the instance: it samples
+    single-flip energy deltas around a random feasible state and sets
+    T0 / T_final so that a median uphill move is accepted with probability
+    0.8 / 0.001, over ``sweeps * n`` moves with geometric cooling. Explicit
+    ``initial_temperature`` / ``cooling_rate`` / ``max_iterations`` values
+    override either schedule. ``restarts > 1`` runs independent seeds
+    ``seed * 1000 + r`` and keeps the best objective.
+    """
+
+    schedule: str = "default"
+    sweeps: int = 1000
+    restarts: int = 1
+    initial_temperature: Optional[float] = None
+    cooling_rate: Optional[float] = None
+    max_iterations: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        if self.schedule not in SA_SCHEDULES:
+            raise BenchmarkError(
+                f"Unknown SA schedule '{self.schedule}'. "
+                f"Expected one of {sorted(SA_SCHEDULES)}"
+            )
+        if self.sweeps < 1:
+            raise BenchmarkError("SA sweeps must be at least 1")
+        if self.restarts < 1:
+            raise BenchmarkError("SA restarts must be at least 1")
+        if self.initial_temperature is not None and not (
+            math.isfinite(self.initial_temperature) and self.initial_temperature > 0
+        ):
+            raise BenchmarkError("SA initial_temperature must be positive and finite")
+        if self.cooling_rate is not None and not 0.0 < self.cooling_rate < 1.0:
+            raise BenchmarkError("SA cooling_rate must be strictly between 0 and 1")
+        if self.max_iterations is not None and self.max_iterations < 1:
+            raise BenchmarkError("SA max_iterations must be at least 1")
+
+
+#: Simulated-annealing schedules understood by `SAConfig`.
+SA_SCHEDULES = frozenset({"default", "auto"})
+
+#: Acceptance probabilities of a median uphill move at the start / end of an
+#: ``auto`` schedule, and the number of sampled deltas that calibrate it.
+_SA_AUTO_START_ACCEPTANCE = 0.8
+_SA_AUTO_END_ACCEPTANCE = 1e-3
+_SA_AUTO_SAMPLES = 200
+
+
 def with_qaoa_overrides(overrides: Dict[str, Any]) -> Optional[QAOAConfig]:
     """Return the benchmark QAOA preset with the given overrides applied.
 
@@ -105,6 +159,7 @@ class BenchmarkConfig:
     seed: int = 42
     qaoa: Optional[QAOAConfig] = None
     periods: int = 252
+    sa: SAConfig = field(default_factory=SAConfig)
 
     def __post_init__(self) -> None:
         if self.num_assets < 2:
@@ -228,8 +283,8 @@ def exact_enumeration(qubo: Any) -> Tuple[float, List[bool]]:
     return best_value + float(qubo.offset), solution
 
 
-def exact_optimum(qubo: Any) -> Tuple[float, str]:
-    """Return ``(optimum, reference)`` for a QUBO instance.
+def exact_optimum(qubo: Any) -> Tuple[float, str, List[bool]]:
+    """Return ``(optimum, reference, solution)`` for a QUBO instance.
 
     The reference names the method: ``"rust_brute_force"`` up to
     ``MAX_RUST_BRUTE_FORCE_ASSETS`` variables, ``"exact_enumeration"`` above.
@@ -237,9 +292,95 @@ def exact_optimum(qubo: Any) -> Tuple[float, str]:
 
     _require_core()
     if qubo.num_variables <= MAX_RUST_BRUTE_FORCE_ASSETS:
-        return float(_core.solve_brute_force(qubo).objective_value), "rust_brute_force"
-    value, _ = exact_enumeration(qubo)
-    return value, "exact_enumeration"
+        result = _core.solve_brute_force(qubo)
+        return (
+            float(result.objective_value),
+            "rust_brute_force",
+            list(result.solution),
+        )
+    value, solution = exact_enumeration(qubo)
+    return value, "exact_enumeration", solution
+
+
+def auto_sa_schedule(
+    qubo: Any, target_assets: int, sweeps: int, seed: int
+) -> Dict[str, float]:
+    """Instance-scaled SA schedule (see `SAConfig`).
+
+    Returns ``initial_temperature``, ``cooling_rate``, ``max_iterations`` and
+    the calibrating ``median_uphill_delta``.
+    """
+
+    num_variables = int(qubo.num_variables)
+    rng = np.random.default_rng(seed)
+    state = np.zeros(num_variables, dtype=bool)
+    state[rng.choice(num_variables, size=target_assets, replace=False)] = True
+    base = float(qubo.evaluate(state.tolist()))
+
+    deltas = []
+    for index in rng.integers(0, num_variables, size=_SA_AUTO_SAMPLES):
+        flipped = state.copy()
+        flipped[index] = not flipped[index]
+        deltas.append(float(qubo.evaluate(flipped.tolist())) - base)
+    uphill = [delta for delta in deltas if delta > 0.0]
+    median_delta = float(np.median(uphill)) if uphill else 1.0
+
+    start = -median_delta / math.log(_SA_AUTO_START_ACCEPTANCE)
+    end = -median_delta / math.log(_SA_AUTO_END_ACCEPTANCE)
+    moves = sweeps * num_variables
+    return {
+        "initial_temperature": start,
+        "cooling_rate": (end / start) ** (1.0 / moves),
+        "max_iterations": float(moves),
+        "median_uphill_delta": median_delta,
+    }
+
+
+def mcnemar_test(
+    records: Sequence[BenchmarkRecord], solver_a: str, solver_b: str
+) -> Dict[str, Any]:
+    """Exact McNemar test on paired optimal-hit outcomes.
+
+    Pairs records by (num_assets, seed) and counts discordant pairs: ``b``
+    where only ``solver_a`` hit the optimum, ``c`` where only ``solver_b``
+    did. The two-sided p-value is the exact binomial tail of
+    min(b, c) under Binomial(b + c, 0.5).
+    """
+
+    hits: Dict[Tuple[int, int], Dict[str, bool]] = {}
+    for record in records:
+        if record.solver_name in (solver_a, solver_b):
+            key = (record.num_assets, record.seed)
+            hits.setdefault(key, {})[record.solver_name] = (
+                record.approximation_ratio >= 1.0 - _RATIO_TOLERANCE
+            )
+
+    pairs = [v for v in hits.values() if solver_a in v and solver_b in v]
+    if not pairs:
+        raise BenchmarkError(
+            f"No paired records found for '{solver_a}' vs '{solver_b}'"
+        )
+
+    only_a = sum(1 for v in pairs if v[solver_a] and not v[solver_b])
+    only_b = sum(1 for v in pairs if v[solver_b] and not v[solver_a])
+    discordant = only_a + only_b
+    if discordant == 0:
+        p_value = 1.0
+    else:
+        tail = sum(math.comb(discordant, i) for i in range(min(only_a, only_b) + 1)) / (
+            2.0**discordant
+        )
+        p_value = min(1.0, 2.0 * tail)
+    return {
+        "solver_a": solver_a,
+        "solver_b": solver_b,
+        "num_pairs": len(pairs),
+        "hits_a": sum(1 for v in pairs if v[solver_a]),
+        "hits_b": sum(1 for v in pairs if v[solver_b]),
+        "only_a": only_a,
+        "only_b": only_b,
+        "p_value": float(p_value),
+    }
 
 
 def run_solver(
@@ -253,6 +394,7 @@ def run_solver(
     run_index: int = 0,
     optimum: Optional[float] = None,
     optimum_reference: Optional[str] = None,
+    optimum_solution: Optional[Sequence[bool]] = None,
 ) -> BenchmarkRecord:
     """Run one solver on one QUBO instance and return its benchmark record.
 
@@ -268,7 +410,7 @@ def run_solver(
         )
 
     if optimum is None:
-        optimum, optimum_reference = exact_optimum(qubo)
+        optimum, optimum_reference, optimum_solution = exact_optimum(qubo)
 
     track_memory = name in {"qaoa", "random"} and not tracemalloc.is_tracing()
     peak_memory_kb: Optional[float] = None
@@ -278,7 +420,13 @@ def run_solver(
     started = time.perf_counter()
     try:
         objective, selected, metadata = _dispatch_solver(
-            name, qubo, labels, prices=prices, config=config, seed=seed
+            name,
+            qubo,
+            labels,
+            prices=prices,
+            config=config,
+            seed=seed,
+            optimum_solution=optimum_solution,
         )
     finally:
         elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -287,8 +435,9 @@ def run_solver(
             tracemalloc.stop()
             peak_memory_kb = peak_bytes / 1024.0
 
+    metadata = {**metadata, "feasible": len(selected) == config.target_assets}
     if optimum_reference is not None:
-        metadata = {**metadata, "optimum_reference": optimum_reference}
+        metadata["optimum_reference"] = optimum_reference
 
     return BenchmarkRecord(
         solver_name=name,
@@ -321,7 +470,7 @@ def run_quality_benchmark(
         qubo = _core.build_qubo(
             prices, labels, config.risk_factor, config.target_assets
         )
-        optimum, reference = exact_optimum(qubo)
+        optimum, reference, solution = exact_optimum(qubo)
 
         for name in solvers:
             records.append(
@@ -335,6 +484,7 @@ def run_quality_benchmark(
                     run_index=run_index,
                     optimum=optimum,
                     optimum_reference=reference,
+                    optimum_solution=solution,
                 )
             )
 
@@ -357,6 +507,12 @@ def summarize_quality(records: Sequence[BenchmarkRecord]) -> Dict[str, Any]:
         timings = [
             record.elapsed_ms for record in records if record.solver_name == name
         ]
+        solver_records = [record for record in records if record.solver_name == name]
+        feasible = [
+            bool(record.metadata["feasible"])
+            for record in solver_records
+            if "feasible" in record.metadata
+        ]
         summary[name] = {
             "runs": len(ratios),
             "mean_approximation_ratio": float(np.mean(ratios)),
@@ -366,6 +522,19 @@ def summarize_quality(records: Sequence[BenchmarkRecord]) -> Dict[str, Any]:
             ),
             "mean_elapsed_ms": float(np.mean(timings)),
         }
+        if feasible:
+            summary[name]["feasibility_rate"] = float(np.mean(feasible))
+        for key, label in (
+            ("p_opt", "mean_p_opt"),
+            ("feasible_probability", "mean_feasible_probability"),
+        ):
+            values = [
+                float(record.metadata[key])
+                for record in solver_records
+                if record.metadata.get(key) is not None
+            ]
+            if values:
+                summary[name][label] = float(np.mean(values))
     return summary
 
 
@@ -502,7 +671,7 @@ def run_market_study(
     out_sample = closes.iloc[cutoff:]
     prices = in_sample.to_numpy(dtype=np.float64)
     qubo = _core.build_qubo(prices, labels, config.risk_factor, config.target_assets)
-    optimum, reference = exact_optimum(qubo)
+    optimum, reference, solution = exact_optimum(qubo)
 
     out_returns = out_sample.pct_change().dropna()
     study: Dict[str, Any] = {
@@ -525,6 +694,7 @@ def run_market_study(
             seed=config.seed,
             optimum=optimum,
             optimum_reference=reference,
+            optimum_solution=solution,
         )
         study["solvers"][name] = {
             "record": record.to_dict(),
@@ -601,6 +771,7 @@ def _dispatch_solver(
     prices: np.ndarray,
     config: BenchmarkConfig,
     seed: int,
+    optimum_solution: Optional[Sequence[bool]] = None,
 ) -> Tuple[float, List[str], Dict[str, Any]]:
     """Run one solver and return (objective, selected assets, metadata)."""
 
@@ -620,12 +791,7 @@ def _dispatch_solver(
         )
 
     if name == "simulated_annealing":
-        result = _core.solve_simulated_annealing(qubo, seed=seed)
-        return (
-            result.objective_value,
-            list(result.selected_assets),
-            {"iterations": result.iterations},
-        )
+        return _run_simulated_annealing(qubo, config, seed)
 
     if name == "markowitz":
         continuous = _core.solve_markowitz(prices, list(labels))
@@ -656,19 +822,71 @@ def _dispatch_solver(
 
     # name == "qaoa" (guarded by run_solver)
     base = config.qaoa if config.qaoa is not None else _DEFAULT_BENCH_QAOA
-    qaoa_config = replace(base, seed=seed)
-    result = solve_qubo_qaoa(qubo, labels=list(labels), config=qaoa_config)
-    return (
-        result.objective_value,
-        list(result.selected_assets),
-        {
-            "layers": qaoa_config.layers,
-            "optimizer": qaoa_config.optimizer,
-            "max_iterations": qaoa_config.max_iterations,
-            "num_restarts": qaoa_config.num_restarts,
-            "iterations": result.iterations,
-        },
+    qaoa_config = replace(base, seed=seed, target_assets=config.target_assets)
+    optimum_bitstring = (
+        "".join("1" if bit else "0" for bit in optimum_solution)
+        if optimum_solution is not None
+        else None
     )
+    result = solve_qubo_qaoa(
+        qubo,
+        labels=list(labels),
+        config=qaoa_config,
+        reference_bitstrings=[optimum_bitstring] if optimum_bitstring else None,
+    )
+    metadata: Dict[str, Any] = {
+        "layers": qaoa_config.layers,
+        "optimizer": qaoa_config.optimizer,
+        "max_iterations": qaoa_config.max_iterations,
+        "num_restarts": qaoa_config.num_restarts,
+        "iterations": result.iterations,
+        "feasible_probability": result.metadata.get("feasible_probability"),
+    }
+    if qaoa_config.feasible_decoding:
+        metadata["feasible_decoding"] = True
+    if optimum_bitstring:
+        metadata["p_opt"] = result.metadata["reference_probabilities"][
+            optimum_bitstring
+        ]
+    return result.objective_value, list(result.selected_assets), metadata
+
+
+def _run_simulated_annealing(
+    qubo: Any, config: BenchmarkConfig, seed: int
+) -> Tuple[float, List[str], Dict[str, Any]]:
+    """Run SA per ``config.sa``; the default call matches Phase 5 exactly."""
+
+    sa = config.sa
+    settings: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {"schedule": sa.schedule, "restarts": sa.restarts}
+    if sa.schedule == "auto":
+        schedule = auto_sa_schedule(qubo, config.target_assets, sa.sweeps, seed)
+        settings = {
+            "initial_temperature": schedule["initial_temperature"],
+            "cooling_rate": schedule["cooling_rate"],
+            "max_iterations": int(schedule["max_iterations"]),
+        }
+        metadata["sweeps"] = sa.sweeps
+        metadata["median_uphill_delta"] = schedule["median_uphill_delta"]
+    for key in ("initial_temperature", "cooling_rate", "max_iterations"):
+        value = getattr(sa, key)
+        if value is not None:
+            settings[key] = value
+    metadata.update(settings)
+
+    seeds = (
+        [seed] if sa.restarts == 1 else [seed * 1000 + r for r in range(sa.restarts)]
+    )
+    best = None
+    iterations = 0
+    for run_seed in seeds:
+        result = _core.solve_simulated_annealing(qubo, seed=run_seed, **settings)
+        iterations += result.iterations
+        if best is None or result.objective_value < best.objective_value:
+            best = result
+    assert best is not None
+    metadata["iterations"] = iterations
+    return best.objective_value, list(best.selected_assets), metadata
 
 
 def _load_close_prices(
@@ -722,7 +940,7 @@ def _json_safe(value: Any) -> Any:
         return value.item()
     if isinstance(value, np.ndarray):
         return [_json_safe(item) for item in value.tolist()]
-    if isinstance(value, QAOAConfig):
+    if isinstance(value, (QAOAConfig, SAConfig)):
         return _json_safe(asdict(value))
     if isinstance(value, Path):
         return str(value)

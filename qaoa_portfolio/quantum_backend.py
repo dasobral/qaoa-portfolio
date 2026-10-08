@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from time import perf_counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pennylane as qml
@@ -37,6 +37,12 @@ class QAOAConfig:
     backend: str = "default.qubit"
     num_restarts: int = 3
     max_stored_solutions: int = 64
+    #: Cardinality k of a feasible portfolio. When set, results report the
+    #: probability mass on Hamming-weight-k states (``feasible_probability``).
+    target_assets: Optional[int] = None
+    #: Decode among the most probable *feasible* states only (needs
+    #: ``target_assets``). Off by default to keep earlier results reproducible.
+    feasible_decoding: bool = False
 
     def __post_init__(self) -> None:
         if self.layers <= 0:
@@ -61,6 +67,10 @@ class QAOAConfig:
             raise QuantumBackendError("num_restarts must be greater than zero")
         if self.max_stored_solutions <= 0:
             raise QuantumBackendError("max_stored_solutions must be greater than zero")
+        if self.target_assets is not None and self.target_assets < 0:
+            raise QuantumBackendError("target_assets must be None or non-negative")
+        if self.feasible_decoding and self.target_assets is None:
+            raise QuantumBackendError("feasible_decoding requires target_assets")
 
 
 @dataclass
@@ -186,8 +196,17 @@ class QAOAQuantumBackend:
     def __init__(self, config: Optional[QAOAConfig] = None):
         self.config = config or QAOAConfig()
 
-    def solve(self, qubo: Any, labels: Optional[List[str]] = None) -> QAOAResult:
-        """Solve a QUBO and return ranked decoded portfolio selections."""
+    def solve(
+        self,
+        qubo: Any,
+        labels: Optional[List[str]] = None,
+        reference_bitstrings: Optional[Sequence[str]] = None,
+    ) -> QAOAResult:
+        """Solve a QUBO and return ranked decoded portfolio selections.
+
+        ``reference_bitstrings`` (e.g. the known optimum) have their final
+        probabilities reported in ``metadata["reference_probabilities"]``.
+        """
 
         started = perf_counter()
         matrix, offset, resolved_labels, source = self._normalize_qubo_with_source(
@@ -201,11 +220,12 @@ class QAOAQuantumBackend:
         optimization = self._optimize_parameters(
             cost_hamiltonian, mixer_hamiltonian, num_wires
         )
-        probabilities = self._compute_probabilities(
+        probabilities, distribution = self._compute_probabilities(
             cost_hamiltonian,
             mixer_hamiltonian,
             num_wires,
             optimization["parameters"],
+            reference_bitstrings,
         )
         ranked_solutions = self._rank_solutions(
             matrix, offset, resolved_labels, probabilities
@@ -239,6 +259,7 @@ class QAOAQuantumBackend:
                 "offset": float(offset),
                 "source": source,
                 "expected_cost": float(optimization["cost"]),
+                **distribution,
             },
         )
 
@@ -407,7 +428,10 @@ class QAOAQuantumBackend:
         mixer_hamiltonian: qml.Hamiltonian,
         num_wires: int,
         parameters: np.ndarray,
-    ) -> Dict[str, float]:
+        reference_bitstrings: Optional[Sequence[str]] = None,
+    ) -> Tuple[Dict[str, float], Dict[str, Any]]:
+        """Return the top-k state probabilities and full-distribution stats."""
+
         probs_circuit = self._make_probabilities_qnode(
             cost_hamiltonian,
             mixer_hamiltonian,
@@ -422,19 +446,49 @@ class QAOAQuantumBackend:
         if total > 0.0:
             raw_probabilities = raw_probabilities / total
 
+        weights = hamming_weights(num_wires)
+        weight_mass = np.bincount(
+            weights, weights=raw_probabilities, minlength=num_wires + 1
+        )
+        distribution: Dict[str, Any] = {
+            "hamming_weight_distribution": _float_list(weight_mass),
+        }
+        if self.config.target_assets is not None:
+            distribution["feasible_probability"] = float(
+                weight_mass[self.config.target_assets]
+                if self.config.target_assets <= num_wires
+                else 0.0
+            )
+        if reference_bitstrings:
+            distribution["reference_probabilities"] = {
+                bitstring: float(raw_probabilities[int(bitstring, 2)])
+                for bitstring in reference_bitstrings
+            }
+
         # Keep only the top-k most probable states: the full 2^n map grows
         # exponentially and downstream consumers (ranking, plots, JSON) only
-        # ever need the head of the distribution.
-        top_k = min(self.config.max_stored_solutions, raw_probabilities.size)
-        top_indices = np.argpartition(raw_probabilities, -top_k)[-top_k:]
+        # ever need the head of the distribution. Feasible decoding restricts
+        # the candidates to Hamming weight k first, so an answer is feasible
+        # whenever the circuit puts any mass on the feasible shell.
+        candidates = raw_probabilities
+        if self.config.feasible_decoding:
+            candidates = np.where(
+                weights == self.config.target_assets, raw_probabilities, -1.0
+            )
+            feasible_count = int(np.count_nonzero(candidates >= 0.0))
+        else:
+            feasible_count = candidates.size
+        top_k = min(self.config.max_stored_solutions, max(1, feasible_count))
+        top_indices = np.argpartition(candidates, -top_k)[-top_k:]
         top_indices = np.sort(top_indices)
-        order = np.argsort(-raw_probabilities[top_indices], kind="stable")
+        order = np.argsort(-candidates[top_indices], kind="stable")
         top_indices = top_indices[order]
 
-        return {
+        probabilities = {
             format(int(index), f"0{num_wires}b"): float(raw_probabilities[index])
             for index in top_indices
         }
+        return probabilities, distribution
 
     def _rank_solutions(
         self,
@@ -530,10 +584,26 @@ def solve_qubo_qaoa(
     qubo: Any,
     labels: Optional[List[str]] = None,
     config: Optional[QAOAConfig] = None,
+    reference_bitstrings: Optional[Sequence[str]] = None,
 ) -> QAOAResult:
     """Convenience function for solving a QUBO with the PennyLane QAOA backend."""
 
-    return QAOAQuantumBackend(config).solve(qubo, labels=labels)
+    return QAOAQuantumBackend(config).solve(
+        qubo, labels=labels, reference_bitstrings=reference_bitstrings
+    )
+
+
+def hamming_weights(num_wires: int) -> np.ndarray:
+    """Return the Hamming weight of every basis-state index ``0 .. 2^n - 1``.
+
+    Built by doubling (weights of the upper half are the lower half plus one),
+    as ``uint8`` to keep memory at one byte per amplitude.
+    """
+
+    weights = np.zeros(1, dtype=np.uint8)
+    for _ in range(num_wires):
+        weights = np.concatenate([weights, weights + np.uint8(1)])
+    return weights
 
 
 def _validate_qubo_matrix(qubo: Any) -> np.ndarray:

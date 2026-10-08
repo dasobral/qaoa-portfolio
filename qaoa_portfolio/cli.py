@@ -65,6 +65,7 @@ def _run_benchmark(args: argparse.Namespace) -> int:
     from .exceptions import BenchmarkError, QuantumBackendError
 
     solvers = tuple(item.strip() for item in args.solvers.split(",") if item.strip())
+    target = args.target or max(1, args.assets // 2)
 
     try:
         qaoa_config = benchmarks.with_qaoa_overrides(
@@ -74,16 +75,26 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 "num_restarts": args.qaoa_restarts,
                 "optimizer": args.qaoa_optimizer,
                 "backend": args.qaoa_backend,
+                # feasible decoding needs k inside the QAOA config itself
+                "feasible_decoding": True if args.qaoa_feasible_decoding else None,
+                "target_assets": target if args.qaoa_feasible_decoding else None,
             }
+        )
+        sa_config = benchmarks.SAConfig(
+            schedule=args.sa_schedule,
+            sweeps=args.sa_sweeps,
+            restarts=args.sa_restarts,
+            max_iterations=args.sa_iterations,
         )
         config = benchmarks.BenchmarkConfig(
             num_assets=args.assets,
-            target_assets=args.target or max(1, args.assets // 2),
+            target_assets=target,
             repeats=args.repeats,
             seed=args.seed,
             periods=args.periods,
             risk_factor=args.risk_factor,
             qaoa=qaoa_config,
+            sa=sa_config,
         )
 
         extra = {}
@@ -140,7 +151,13 @@ def _run_benchmark(args: argparse.Namespace) -> int:
                 f"- {solver}: ratio {stats['mean_approximation_ratio']:.4f} "
                 f"± {stats['std_approximation_ratio']:.4f}, "
                 f"optimal {stats['optimal_hit_rate']:.0%}, "
+                f"feasible {stats.get('feasibility_rate', float('nan')):.0%}, "
                 f"{stats['mean_elapsed_ms']:.1f} ms"
+                + (
+                    f", p_opt {stats['mean_p_opt']:.3f}"
+                    if "mean_p_opt" in stats
+                    else ""
+                )
             )
     return 0
 
@@ -266,6 +283,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="PennyLane device for QAOA (default: benchmark preset, "
         "default.qubit; e.g. lightning.qubit, lightning.gpu).",
+    )
+    benchmark.add_argument(
+        "--qaoa-feasible-decoding",
+        action="store_true",
+        help="Decode QAOA answers among the most probable states that select "
+        "exactly --target assets.",
+    )
+    benchmark.add_argument(
+        "--sa-schedule",
+        choices=["default", "auto"],
+        default="default",
+        help="Simulated-annealing schedule: the Rust default (T0 = 100, "
+        "10 000 moves) or an instance-scaled 'auto' schedule.",
+    )
+    benchmark.add_argument(
+        "--sa-sweeps",
+        type=int,
+        default=1000,
+        help="Moves per variable for --sa-schedule auto (default: 1000).",
+    )
+    benchmark.add_argument(
+        "--sa-restarts",
+        type=int,
+        default=1,
+        help="Independent SA runs per instance, best kept (default: 1).",
+    )
+    benchmark.add_argument(
+        "--sa-iterations",
+        type=int,
+        default=None,
+        help="Override the SA move count of either schedule.",
     )
     benchmark.add_argument("--symbols", dest="symbols", type=str, default=None)
     benchmark.add_argument("--start-date", type=str, default=None)

@@ -145,6 +145,55 @@ class TestBenchmarkCLI:
         assert payload["summary"]["brute_force"]["mean_approximation_ratio"] == 1.0
         assert len(payload["records"]) == 4
 
+    def test_cli_sa_and_feasible_decoding_flags(self, tmp_path, monkeypatch, capsys):
+        from qaoa_portfolio.cli import main
+
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "qaoa-portfolio",
+                "benchmark",
+                "--assets",
+                "4",
+                "--repeats",
+                "1",
+                "--periods",
+                "70",
+                "--solvers",
+                "brute_force,simulated_annealing,qaoa",
+                "--qaoa-iterations",
+                "5",
+                "--qaoa-feasible-decoding",
+                "--sa-schedule",
+                "auto",
+                "--sa-sweeps",
+                "20",
+                "--sa-restarts",
+                "2",
+                "--output",
+                str(tmp_path),
+            ],
+        )
+
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+        assert excinfo.value.code == 0
+        assert "feasible 100%" in capsys.readouterr().out
+        payload = json.loads(next(tmp_path.glob("quality-*.json")).read_text())
+        assert payload["config"]["sa"] == {
+            "schedule": "auto",
+            "sweeps": 20,
+            "restarts": 2,
+            "initial_temperature": None,
+            "cooling_rate": None,
+            "max_iterations": None,
+        }
+        assert payload["config"]["qaoa"]["feasible_decoding"] is True
+        by_solver = {record["solver_name"]: record for record in payload["records"]}
+        assert by_solver["simulated_annealing"]["metadata"]["max_iterations"] == 80
+        assert by_solver["qaoa"]["metadata"]["feasible"] is True
+
     def test_cli_market_suite_requires_window_arguments(self, monkeypatch, capsys):
         from qaoa_portfolio.cli import main
 

@@ -15,7 +15,10 @@ from qaoa_portfolio.benchmarks import (
     BenchmarkConfig,
     BenchmarkRecord,
     _DEFAULT_BENCH_QAOA,
+    SAConfig,
     approximation_ratio,
+    auto_sa_schedule,
+    mcnemar_test,
     exact_enumeration,
     exact_optimum,
     generate_synthetic_prices,
@@ -124,7 +127,8 @@ class TestExactOptimum:
             num_assets=MAX_RUST_BRUTE_FORCE_ASSETS + 1, target_assets=10
         )
         _, labels, qubo = tiny_instance(large)
-        value, reference = exact_optimum(qubo)
+        value, reference, solution = exact_optimum(qubo)
+        assert qubo.evaluate(solution) == pytest.approx(value, abs=1e-12)
         assert reference == "exact_enumeration"
 
         record = run_solver(
@@ -134,6 +138,111 @@ class TestExactOptimum:
         assert record.metadata["method"] == "exact_enumeration"
         assert record.metadata["optimum_reference"] == "exact_enumeration"
         assert len(record.selected_assets) == 10
+
+
+class TestSimulatedAnnealingConfig:
+    def test_default_config_reproduces_plain_rust_call(self):
+        config = tiny_config(num_assets=8, target_assets=4)
+        prices, labels, qubo = tiny_instance(config)
+
+        record = run_solver(
+            "simulated_annealing", qubo, labels, prices=prices, config=config, seed=7
+        )
+        direct = qaoa_portfolio_core.solve_simulated_annealing(qubo, seed=7)
+
+        assert record.objective_value == direct.objective_value
+        assert record.metadata["schedule"] == "default"
+        assert record.metadata["restarts"] == 1
+
+    def test_auto_schedule_scales_with_instance(self):
+        config = tiny_config(num_assets=8, target_assets=4)
+        _, _, qubo = tiny_instance(config)
+
+        schedule = auto_sa_schedule(qubo, 4, sweeps=100, seed=7)
+
+        assert schedule["max_iterations"] == 800
+        assert schedule["initial_temperature"] > 0
+        assert 0 < schedule["cooling_rate"] < 1
+        final = schedule["initial_temperature"] * schedule["cooling_rate"] ** 800
+        # median uphill move accepted with ~1e-3 at the end of the schedule
+        assert math.exp(-schedule["median_uphill_delta"] / final) == pytest.approx(
+            1e-3, rel=1e-6
+        )
+
+    def test_auto_schedule_with_restarts_records_settings(self):
+        config = tiny_config(
+            num_assets=8,
+            target_assets=4,
+            sa=SAConfig(schedule="auto", sweeps=50, restarts=3),
+        )
+        prices, labels, qubo = tiny_instance(config)
+
+        record = run_solver(
+            "simulated_annealing", qubo, labels, prices=prices, config=config, seed=7
+        )
+
+        assert record.metadata["schedule"] == "auto"
+        assert record.metadata["restarts"] == 3
+        assert record.metadata["max_iterations"] == 400
+        assert record.metadata["iterations"] == 1200
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"schedule": "fast"},
+            {"sweeps": 0},
+            {"restarts": 0},
+            {"cooling_rate": 1.0},
+            {"initial_temperature": -1.0},
+            {"max_iterations": 0},
+        ],
+    )
+    def test_invalid_sa_configs_rejected(self, overrides):
+        with pytest.raises(BenchmarkError):
+            SAConfig(**overrides)
+
+
+class TestFeasibilityMetrics:
+    def test_records_flag_feasibility_and_qaoa_reports_p_opt(self):
+        config = tiny_config()
+        records = run_quality_benchmark(config, solvers=("brute_force", "qaoa"))
+
+        for record in records:
+            assert record.metadata["feasible"] == (
+                len(record.selected_assets) == config.target_assets
+            )
+        qaoa = next(record for record in records if record.solver_name == "qaoa")
+        assert 0.0 <= qaoa.metadata["p_opt"] <= 1.0
+        assert 0.0 <= qaoa.metadata["feasible_probability"] <= 1.0
+
+        summary = summarize_quality(records)
+        assert summary["brute_force"]["feasibility_rate"] == 1.0
+        assert "mean_p_opt" in summary["qaoa"]
+
+    def test_mcnemar_counts_discordant_pairs(self):
+        def hits(name, outcomes):
+            return [
+                BenchmarkRecord(
+                    solver_name=name,
+                    num_assets=4,
+                    objective_value=0.0,
+                    approximation_ratio=1.0 if hit else 0.5,
+                    selected_assets=[],
+                    elapsed_ms=0.0,
+                    peak_memory_kb=None,
+                    seed=seed,
+                    run_index=seed,
+                )
+                for seed, hit in enumerate(outcomes)
+            ]
+
+        records = hits("a", [True] * 8 + [False] * 2) + hits("b", [False] * 10)
+        outcome = mcnemar_test(records, "a", "b")
+
+        assert outcome["only_a"] == 8
+        assert outcome["only_b"] == 0
+        assert outcome["p_value"] == pytest.approx(2 / 2**8)
+        assert mcnemar_test(records, "a", "a")["p_value"] == 1.0
 
 
 class TestSyntheticPrices:

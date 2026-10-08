@@ -12,6 +12,7 @@ from qaoa_portfolio.quantum_backend import (
     build_mixer_hamiltonian,
     decode_solution,
     evaluate_qubo_bitstring,
+    hamming_weights,
     solve_qubo_qaoa,
 )
 
@@ -247,3 +248,43 @@ def test_seeded_qaoa_run_is_deterministic_for_toy_qubo():
     assert first.optimal_parameters["betas"] == pytest.approx(
         second.optimal_parameters["betas"]
     )
+
+
+def test_hamming_weights_match_popcount():
+    weights = hamming_weights(6)
+    assert weights.dtype == np.uint8
+    assert weights.tolist() == [bin(index).count("1") for index in range(64)]
+
+
+def test_feasible_decoding_requires_target_assets():
+    with pytest.raises(QuantumBackendError):
+        QAOAConfig(feasible_decoding=True)
+    with pytest.raises(QuantumBackendError):
+        QAOAConfig(target_assets=-1)
+
+
+def test_feasibility_metadata_and_feasible_decoding():
+    # Unconstrained minimum is "11" (weight 2); with k = 1 the best feasible
+    # state is "10". A tiny stored head forces the feasible filter to matter.
+    qubo = np.array([[-1.0, -1.0], [-1.0, -1.0]])
+    base = dict(
+        layers=1,
+        optimizer="gradient_descent",
+        max_iterations=5,
+        num_restarts=1,
+        max_stored_solutions=1,
+        target_assets=1,
+    )
+
+    plain = solve_qubo_qaoa(
+        qubo, config=QAOAConfig(**base), reference_bitstrings=["10", "01"]
+    )
+    distribution = plain.metadata["hamming_weight_distribution"]
+    assert sum(distribution) == pytest.approx(1.0)
+    assert plain.metadata["feasible_probability"] == pytest.approx(distribution[1])
+    references = plain.metadata["reference_probabilities"]
+    assert sum(references.values()) == pytest.approx(distribution[1])
+
+    feasible = solve_qubo_qaoa(qubo, config=QAOAConfig(**base, feasible_decoding=True))
+    assert feasible.best_bitstring.count("1") == 1
+    assert all(key.count("1") == 1 for key in feasible.probabilities)
