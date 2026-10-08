@@ -257,7 +257,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--qaoa-optimizer",
         type=str,
         default=None,
-        help="QAOA classical optimizer (default: adam).",
+        help="QAOA classical optimizer (default: benchmark preset, cobyla; "
+        "use adam to reproduce pre-October-2026 artifacts).",
     )
     benchmark.add_argument(
         "--qaoa-backend",

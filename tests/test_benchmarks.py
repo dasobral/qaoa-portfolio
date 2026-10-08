@@ -11,9 +11,13 @@ import pytest
 from qaoa_portfolio.benchmarks import (
     DEFAULT_SOLVERS,
     MAX_EXACT_ASSETS,
+    MAX_RUST_BRUTE_FORCE_ASSETS,
     BenchmarkConfig,
     BenchmarkRecord,
+    _DEFAULT_BENCH_QAOA,
     approximation_ratio,
+    exact_enumeration,
+    exact_optimum,
     generate_synthetic_prices,
     run_quality_benchmark,
     run_solver,
@@ -82,9 +86,54 @@ class TestBenchmarkConfig:
             with pytest.raises(BenchmarkError):
                 BenchmarkConfig(**overrides)
 
-    def test_oversized_problem_error_names_the_stretch_goal(self):
+    def test_oversized_problem_error_names_shot_based_sampling(self):
         with pytest.raises(BenchmarkError, match="shot-based"):
-            BenchmarkConfig(num_assets=32)
+            BenchmarkConfig(num_assets=MAX_EXACT_ASSETS + 4)
+
+    def test_sizes_above_twenty_are_accepted(self):
+        config = BenchmarkConfig(num_assets=MAX_RUST_BRUTE_FORCE_ASSETS + 4)
+        assert config.num_assets == 24
+
+    def test_benchmark_preset_uses_cobyla(self):
+        assert _DEFAULT_BENCH_QAOA.optimizer == "cobyla"
+        assert _DEFAULT_BENCH_QAOA.layers == 1
+        assert _DEFAULT_BENCH_QAOA.max_iterations == 60
+        assert _DEFAULT_BENCH_QAOA.num_restarts == 2
+
+
+class TestExactOptimum:
+    @pytest.mark.parametrize("num_assets", [4, 9, 12])
+    def test_enumeration_matches_rust_brute_force(self, num_assets):
+        config = tiny_config(num_assets=num_assets, target_assets=num_assets // 2)
+        _, labels, qubo = tiny_instance(config)
+
+        value, solution = exact_enumeration(qubo)
+        reference = qaoa_portfolio_core.solve_brute_force(qubo)
+
+        assert value == pytest.approx(reference.objective_value, abs=1e-12)
+        assert [label for label, bit in zip(labels, solution) if bit] == list(
+            reference.selected_assets
+        )
+        assert qubo.evaluate(solution) == pytest.approx(value, abs=1e-12)
+
+    def test_reference_switches_above_rust_limit(self):
+        small = tiny_config(num_assets=6, target_assets=3)
+        assert exact_optimum(tiny_instance(small)[2])[1] == "rust_brute_force"
+
+        large = tiny_config(
+            num_assets=MAX_RUST_BRUTE_FORCE_ASSETS + 1, target_assets=10
+        )
+        _, labels, qubo = tiny_instance(large)
+        value, reference = exact_optimum(qubo)
+        assert reference == "exact_enumeration"
+
+        record = run_solver(
+            "brute_force", qubo, labels, prices=None, config=large, seed=7
+        )
+        assert record.objective_value == pytest.approx(value)
+        assert record.metadata["method"] == "exact_enumeration"
+        assert record.metadata["optimum_reference"] == "exact_enumeration"
+        assert len(record.selected_assets) == 10
 
 
 class TestSyntheticPrices:
@@ -168,6 +217,7 @@ class TestSolverAdapters:
         )
 
         assert record.approximation_ratio == pytest.approx(1.0)
+        assert record.metadata["optimum_reference"] == "rust_brute_force"
 
     def test_random_baseline_respects_target_and_seed(self):
         config = tiny_config()

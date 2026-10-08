@@ -215,8 +215,9 @@ uv run qaoa-portfolio benchmark --suite quality \
 ```
 
 (run inside the section 4 container; on the host venv, in the activated
-environment). This runs the benchmark preset (1 layer, adam, 60
-iterations, 2 restarts) with only the device swapped, and writes
+environment). This runs the benchmark preset (1 layer, COBYLA, 60
+iterations, 2 restarts; add `--qaoa-optimizer adam` to reproduce the October 2026
+campaign) with only the device swapped, and writes
 `results/benchmarks/quality-*.json`.
 
 If you committed the image (`qopo-spark:spark`), the whole run is one
@@ -284,7 +285,8 @@ try:
 except Exception as exc:  # torch is optional for the benchmark itself
     print(f"[spark] torch not introspectable: {exc}")
 
-# 2) Same instance settings and QAOA preset as the 3080 quality run.
+# 2) Same instance settings and QAOA settings as the October 2026 3080 quality
+#    run (the Adam-era preset; the harness preset is COBYLA since then).
 qaoa = QAOAConfig(backend=BACKEND, layers=1, optimizer="adam",
                   max_iterations=60, num_restarts=2)
 config = BenchmarkConfig(num_assets=args.assets, target_assets=4, repeats=args.repeats,

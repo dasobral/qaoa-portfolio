@@ -105,7 +105,7 @@ See [Visualization API](docs/visualization.md) for usage and configuration detai
 
 - Seeded, paired benchmark harness comparing QAOA against brute force, simulated annealing, Markowitz top-k, and random selection
 - Approximation-ratio quality metric with paired Wilcoxon significance testing
-- Time/memory scaling studies across 4–20 assets (up to 28 outside the harness) and QAOA depths 1–10
+- Time/memory scaling studies across 4–28 assets and QAOA depths 1–10 (exact reference optimum at every size: Rust brute force up to 20 assets, chunked enumeration above)
 - Selectable simulator backend (`--qaoa-backend`: `default.qubit`, `lightning.qubit`, `lightning.gpu`), benchmarked on an RTX 3080 and an NVIDIA DGX Spark (GB10)
 - Real market data studies (S&P 500 subset, crypto, mixed) with out-of-sample evaluation
 - `qaoa-portfolio benchmark` CLI subcommand writing reproducible JSON artifacts
@@ -126,9 +126,9 @@ QAOA beats random selection by +48 % relative quality (Wilcoxon p ≈ 0.002, exc
 
 - Simulator backends change speed, never results: every backend reproduces the table above exactly.
 - n = 20 QAOA solve: 396 s → 12.7 s on `lightning.gpu` (31×); the June 16 GB peak was `default.qubit` backprop memory, ~17 MB with the lightning backends.
-- Exact simulation now reaches 26 assets on the RTX 3080 and 28 on the DGX Spark (measured outside the harness, which still caps n at 20). The RTX is ~2.8× faster per solve (memory bandwidth); the Spark goes larger (capacity).
+- Exact simulation now reaches 26 assets on the RTX 3080 and 28 on the DGX Spark (first measured with campaign scripts; the harness now accepts up to 28 assets). The RTX is ~2.8× faster per solve (memory bandwidth); the Spark goes larger (capacity).
 - QAOA reaches the exact optimum at 24–26 assets where the default, untuned simulated annealing does not, but with a lower mean ratio and minutes-to-hours versus milliseconds — not yet a fair comparison.
-- COBYLA beats Adam for this problem: better or equal hit rates at every size except 24 assets (2/5 vs 3/5), at 2.5–12× less time on the same backend.
+- COBYLA beats Adam for this problem: better or equal hit rates at every size except 24 assets (2/5 vs 3/5), at 2.5–12× less time on the same backend. It is now the benchmark preset's optimizer; `--qaoa-optimizer adam` reproduces earlier results.
 
 **Results dashboard:** `python front/build_data.py` bundles every artifact under `results/benchmarks/` (including datasets copied from other hosts) and `front/index.html` displays it — quality, scaling, optimizer budget, depth, market studies, and a run log. Static page, no server needed; see [front/README.md](front/README.md).
 
@@ -158,7 +158,7 @@ UV_PROJECT_ENVIRONMENT=qaoa-env uv run qaoa-portfolio benchmark --suite quality 
 
 ### Current Limits
 
-- The benchmark harness caps portfolios at 20 assets (`MAX_EXACT_ASSETS`; the Rust brute force that supplies the reference optimum accepts n ≤ 20). Exact simulation itself reaches 26 assets on a 10 GB RTX 3080 and 28 on a DGX Spark; beyond ~30 assets a shot-based sampling mode is required.
+- The benchmark harness caps portfolios at 28 assets (`MAX_EXACT_ASSETS`), the largest exact simulation measured (DGX Spark; 26 on a 10 GB RTX 3080). Beyond ~30 assets a shot-based sampling mode is required.
 - Visualization covers reusable plotting functions and the static results dashboard in `front/`; notebook walkthroughs are deferred to later phases.
 - Rendered quantum circuit diagrams are text-only summaries until Phase 6.
 

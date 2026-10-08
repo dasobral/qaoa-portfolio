@@ -2,8 +2,9 @@
 
 Methodology and curated results for the QAOA Portfolio Optimizer benchmark
 suites. Raw JSON artifacts live under `results/benchmarks/` (gitignored);
-every number below can be regenerated with the listed command, except the
-n > 20 points of §7.4, which were measured outside the harness (see there).
+every number below can be regenerated with the listed command. The n > 20
+points of §7.4 were measured with campaign scripts; since §8 the harness
+itself accepts n ≤ 28 and reproduces them.
 
 Two campaigns are reported: the **June 2026** Phase 5 baseline (§2–6,
 RTX 3080 workstation, CPU `default.qubit` simulator) and the **October 2026**
@@ -12,8 +13,12 @@ simulator backends (§7). The `front/` dashboard displays both datasets.
 
 - **Module:** `qaoa_portfolio/benchmarks.py`
 - **CLI:** `qaoa-portfolio benchmark --suite {quality,scaling,layers,market}`
-- **Scope:** at most 20 assets — a harness limit (`MAX_EXACT_ASSETS = 20`):
-  the Rust brute force that supplies the reference optimum accepts n ≤ 20.
+- **Scope:** at most 28 assets (`MAX_EXACT_ASSETS = 28`, the largest
+  measured exact QAOA solve). The reference optimum is exact at every size:
+  Rust brute force for n ≤ 20, chunked NumPy enumeration above (§8).
+- **Preset:** QAOA at p = 1, **COBYLA**, ≤ 60 iterations, 2 restarts since
+  §8. Sections 2–7 used the earlier **Adam** preset; reproduce them with
+  `--qaoa-optimizer adam`.
 
 ## 1. Methodology
 
@@ -30,11 +35,11 @@ identical instance for repeat *i* (seed = base seed + *i*).
 
 | Solver | Implementation | Notes |
 |--------|----------------|-------|
-| `brute_force` | Rust, exhaustive | Defines the per-instance optimum (n ≤ 20) |
+| `brute_force` | Rust, exhaustive (n ≤ 20); NumPy enumeration (n > 20) | Defines the per-instance optimum; records name the method in `metadata.optimum_reference` |
 | `simulated_annealing` | Rust, seeded | Default schedule |
 | `markowitz` | Rust continuous + top-k | Selects the `target_assets` largest weights, then evaluates on the QUBO |
 | `random` | Python, seeded | Uniform cardinality-constrained sample — the floor any optimizer must beat |
-| `qaoa` | PennyLane statevector | Benchmark default: 1 layer, Adam, ≤60 iterations, 2 restarts |
+| `qaoa` | PennyLane statevector | Benchmark default: 1 layer, COBYLA, ≤60 iterations, 2 restarts (Adam before §8) |
 
 ### 1.3 Quality metric: approximation ratio
 
@@ -309,8 +314,8 @@ accepts n ≤ 20). The points below were produced by campaign scripts that
 rebuild the identical seeded instances, call the same QAOA solver, and
 compute the exact optimum by enumerating all 2^n bitstrings in NumPy
 (validated equal to the Rust brute force at n = 12–20, and equal across the
-two hosts to 1e-13). They are not regenerable with the CLI at this commit;
-bringing n > 20 into the harness is planned.
+two hosts to 1e-13). Since §8 the harness runs these sizes directly
+(`--assets 22 … 28`, add `--qaoa-optimizer adam` for the October preset).
 
 Seconds per solve, same cost settings as §7.3 (1 instance, seed 42):
 
@@ -412,3 +417,42 @@ How to read this table:
 5. The current circuit construction, not the GPUs, dominates run time;
    expressing the cost layer as a single pass is the largest available
    speed-up.
+
+## 8. Preset change and n > 20 in the harness (October 2026, after the campaign)
+
+Two setup changes landed once both October campaigns had closed, so no
+campaign mixes presets:
+
+1. **COBYLA is the benchmark-preset optimizer** (p = 1, ≤ 60 iterations,
+   2 restarts), based on §7.6. Pre-switch artifacts stay reproducible with
+   `--qaoa-optimizer adam`; a re-run of the October n = 8 `lightning.qubit`
+   quality command with that flag matched all 50 records exactly.
+2. **The harness accepts n ≤ 28.** For n > 20 the reference optimum, and the
+   `brute_force` solver's answer, come from a chunked enumeration of all 2^n
+   bitstrings (`benchmarks.exact_enumeration`), checked against the Rust
+   brute force at n = 4–20 (objective within 6e-14, identical selections) and
+   against the campaign optimum at n = 22 and 24. Every record names its
+   reference in `metadata.optimum_reference`
+   (`rust_brute_force` | `exact_enumeration`). Enumeration takes ~3.5 s at
+   n = 24 and ~14 s at n = 26 on the RTX 3080 host's CPU.
+
+First runs with the new preset (RTX 3080 host, seed 42):
+
+| n | backend | instances | QAOA ratio (optimal) | s / solve | Adam preset, same instances |
+|--:|---|--:|---|--:|---|
+| 8 | `lightning.qubit` | 10 | 0.817 (5/10) | 4.3 | 0.825 (3/10), 10.2 s |
+| 12 | `lightning.gpu` | 1 | 1.000 (1/1) | 7.4 | 0.415 (0/1), 15 s |
+| 22 | `lightning.gpu` | 1 | 1.000 (1/1) | 26 | 1.000 (1/1), 264 s on the GB10 |
+
+```bash
+uv run qaoa-portfolio benchmark --suite quality --assets 8 --target 4 \
+  --repeats 10 --seed 42 --qaoa-backend lightning.qubit
+uv run qaoa-portfolio benchmark --suite quality --assets 22 --repeats 1 \
+  --seed 42 --qaoa-backend lightning.gpu
+```
+
+The n = 12 and 22 rows are single-instance harness checks, not quality
+claims (the COBYLA n = 12 seed matches the October E4c run, 1.000 in 5.8 s).
+At n = 8 COBYLA solves more instances to the optimum but its mean ratio is
+slightly lower: the bimodal pattern of §7.5 (optimum or far off) persists
+with either optimizer.

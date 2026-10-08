@@ -50,9 +50,17 @@ DEFAULT_SOLVERS: Tuple[str, ...] = (
     "qaoa",
 )
 
-#: Honest ceiling for exact statevector simulation and full 2^n ranking
-#: (roadmap re-scope, 2026-06-12). Larger sizes need shot-based sampling.
-MAX_EXACT_ASSETS = 20
+#: Largest portfolio the harness accepts. Exact statevector QAOA was measured
+#: up to n = 28 (DGX Spark GB10, October 2026); the reference optimum is exact
+#: at every accepted size. Larger sizes need shot-based sampling.
+MAX_EXACT_ASSETS = 28
+
+#: The Rust brute-force solver refuses larger inputs; above this size the
+#: reference optimum comes from a chunked NumPy enumeration instead.
+MAX_RUST_BRUTE_FORCE_ASSETS = 20
+
+#: Bitstrings scored per enumeration chunk (bounds memory to ~n * 8 MiB).
+_ENUMERATION_CHUNK = 1 << 20
 
 #: Minimum price history for stable covariance estimates.
 MIN_BENCHMARK_PERIODS = 60
@@ -60,10 +68,13 @@ MIN_BENCHMARK_PERIODS = 60
 _RATIO_TOLERANCE = 1e-9
 
 #: Light QAOA settings used when a study does not provide its own config:
-#: benchmarking favors many repeats over deep single optimizations.
+#: benchmarking favors many repeats over deep single optimizations. COBYLA
+#: replaced Adam in October 2026 (better or equal hit rates except n = 24, at
+#: 2.5-12x less time, no gradient memory); pass optimizer="adam" to reproduce
+#: earlier artifacts.
 _DEFAULT_BENCH_QAOA = QAOAConfig(
     layers=1,
-    optimizer="adam",
+    optimizer="cobyla",
     max_iterations=60,
     num_restarts=2,
 )
@@ -101,8 +112,7 @@ class BenchmarkConfig:
         if self.num_assets > MAX_EXACT_ASSETS:
             raise BenchmarkError(
                 f"num_assets={self.num_assets} exceeds the exact-simulation limit "
-                f"of {MAX_EXACT_ASSETS}; larger sizes require the shot-based "
-                "sampling stretch goal (see docs/PROJECT_PHASE5_SPEC.md §3.5)"
+                f"of {MAX_EXACT_ASSETS}; larger sizes require shot-based sampling"
             )
         if not 0 < self.target_assets <= self.num_assets:
             raise BenchmarkError(
@@ -182,6 +192,56 @@ def approximation_ratio(
     return 1.0 / (1.0 + gap)
 
 
+def exact_enumeration(qubo: Any) -> Tuple[float, List[bool]]:
+    """Return the exact QUBO minimum and its bitstring by full enumeration.
+
+    Scores all 2^n bitstrings in chunks with NumPy, using the upper-triangle
+    convention of ``PyQUBOMatrix.evaluate``; bit ``j`` of the solution is
+    variable ``j``. Used as the reference optimum above
+    ``MAX_RUST_BRUTE_FORCE_ASSETS``; validated bit-identical to the Rust brute
+    force at n = 12-20 during the October 2026 campaign.
+    """
+
+    upper = np.triu(np.asarray(qubo.to_numpy(), dtype=np.float64))
+    num_variables = upper.shape[0]
+    if num_variables > 40:
+        raise BenchmarkError("exact enumeration is limited to 40 variables")
+
+    shifts = np.uint64(num_variables - 1) - np.arange(num_variables, dtype=np.uint64)
+    best_value = math.inf
+    best_index = 0
+    total = 1 << num_variables
+    for start in range(0, total, _ENUMERATION_CHUNK):
+        indices = np.arange(
+            start, min(start + _ENUMERATION_CHUNK, total), dtype=np.uint64
+        )
+        bits = ((indices[:, None] >> shifts) & np.uint64(1)).astype(np.float64)
+        values = np.einsum("ij,ij->i", bits @ upper, bits)
+        position = int(np.argmin(values))
+        if values[position] < best_value:
+            best_value = float(values[position])
+            best_index = start + position
+
+    solution = [
+        bool((best_index >> (num_variables - 1 - j)) & 1) for j in range(num_variables)
+    ]
+    return best_value + float(qubo.offset), solution
+
+
+def exact_optimum(qubo: Any) -> Tuple[float, str]:
+    """Return ``(optimum, reference)`` for a QUBO instance.
+
+    The reference names the method: ``"rust_brute_force"`` up to
+    ``MAX_RUST_BRUTE_FORCE_ASSETS`` variables, ``"exact_enumeration"`` above.
+    """
+
+    _require_core()
+    if qubo.num_variables <= MAX_RUST_BRUTE_FORCE_ASSETS:
+        return float(_core.solve_brute_force(qubo).objective_value), "rust_brute_force"
+    value, _ = exact_enumeration(qubo)
+    return value, "exact_enumeration"
+
+
 def run_solver(
     name: str,
     qubo: Any,
@@ -192,11 +252,13 @@ def run_solver(
     seed: int,
     run_index: int = 0,
     optimum: Optional[float] = None,
+    optimum_reference: Optional[str] = None,
 ) -> BenchmarkRecord:
     """Run one solver on one QUBO instance and return its benchmark record.
 
-    When ``optimum`` is not provided it is computed with the brute-force
-    solver, so the approximation ratio is always defined.
+    When ``optimum`` is not provided it is computed with `exact_optimum`, so
+    the approximation ratio is always defined. The record's metadata names
+    the reference method under ``optimum_reference``.
     """
 
     _require_core()
@@ -206,7 +268,7 @@ def run_solver(
         )
 
     if optimum is None:
-        optimum = float(_core.solve_brute_force(qubo).objective_value)
+        optimum, optimum_reference = exact_optimum(qubo)
 
     track_memory = name in {"qaoa", "random"} and not tracemalloc.is_tracing()
     peak_memory_kb: Optional[float] = None
@@ -224,6 +286,9 @@ def run_solver(
             _, peak_bytes = tracemalloc.get_traced_memory()
             tracemalloc.stop()
             peak_memory_kb = peak_bytes / 1024.0
+
+    if optimum_reference is not None:
+        metadata = {**metadata, "optimum_reference": optimum_reference}
 
     return BenchmarkRecord(
         solver_name=name,
@@ -256,7 +321,7 @@ def run_quality_benchmark(
         qubo = _core.build_qubo(
             prices, labels, config.risk_factor, config.target_assets
         )
-        optimum = float(_core.solve_brute_force(qubo).objective_value)
+        optimum, reference = exact_optimum(qubo)
 
         for name in solvers:
             records.append(
@@ -269,6 +334,7 @@ def run_quality_benchmark(
                     seed=run_seed,
                     run_index=run_index,
                     optimum=optimum,
+                    optimum_reference=reference,
                 )
             )
 
@@ -436,7 +502,7 @@ def run_market_study(
     out_sample = closes.iloc[cutoff:]
     prices = in_sample.to_numpy(dtype=np.float64)
     qubo = _core.build_qubo(prices, labels, config.risk_factor, config.target_assets)
-    optimum = float(_core.solve_brute_force(qubo).objective_value)
+    optimum, reference = exact_optimum(qubo)
 
     out_returns = out_sample.pct_change().dropna()
     study: Dict[str, Any] = {
@@ -458,6 +524,7 @@ def run_market_study(
             config=config,
             seed=config.seed,
             optimum=optimum,
+            optimum_reference=reference,
         )
         study["solvers"][name] = {
             "record": record.to_dict(),
@@ -538,6 +605,13 @@ def _dispatch_solver(
     """Run one solver and return (objective, selected assets, metadata)."""
 
     if name == "brute_force":
+        if len(labels) > MAX_RUST_BRUTE_FORCE_ASSETS:
+            objective, solution = exact_enumeration(qubo)
+            return (
+                objective,
+                [label for label, bit in zip(labels, solution) if bit],
+                {"iterations": 1 << len(labels), "method": "exact_enumeration"},
+            )
         result = _core.solve_brute_force(qubo)
         return (
             result.objective_value,
