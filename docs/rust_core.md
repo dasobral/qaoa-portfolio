@@ -71,3 +71,5 @@ python -m maturin build --features python-bindings
 ```
 
 The extension exposes `build_qubo(prices, symbols, risk_aversion, target_assets)`, `solve_brute_force(qubo)`, `solve_simulated_annealing(qubo, ...)`, and `solve_markowitz(prices, symbols)`. Errors map to Python `ValueError`, `RuntimeError`, or `qaoa_portfolio_core.OptimizationError`.
+
+Classes: `PyQUBOMatrix` (`num_variables`, `offset`, `evaluate(solution)`, `to_numpy()`, `to_list()`), `PyOptimizationResult` (`solution`, `objective_value`, `selected_assets`, `solver_name`, `iterations`, `to_dict()`), and `PyReturnSeries(symbols, log_returns)` — exposes the Rust-side statistics the QUBO is built from (`num_periods`, `num_assets`, `mean_returns()` annualized as mean × 252, `covariance_matrix()`), so Python code can inspect or cross-check the Rust conventions above. The Rust `Asset`/`Portfolio` structs have no Python wrappers: the pipeline passes price arrays and symbol lists instead (the earlier `PyAsset`/`PyPortfolio` scaffold was removed in Phase 6).

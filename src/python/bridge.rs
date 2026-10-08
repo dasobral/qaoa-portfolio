@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use nalgebra::DMatrix;
 use numpy::{PyArray1, PyArray2, PyReadonlyArray2};
 use pyo3::create_exception;
@@ -11,88 +9,10 @@ use crate::error::QaoaError;
 use crate::optimization::{
     BruteForceSolver, ContinuousResult, MarkowitzSolver, OptimizationResult, SimulatedAnnealing,
 };
-use crate::portfolio::{Asset, AssetClass, Portfolio, ReturnSeries};
+use crate::portfolio::ReturnSeries;
 use crate::qubo::{QUBOFormulation, QUBOMatrix};
 
 create_exception!(qaoa_portfolio_core, OptimizationError, PyException);
-
-#[pyclass(name = "PyAsset", module = "qaoa_portfolio_core", skip_from_py_object)]
-#[derive(Clone)]
-pub struct PyAsset {
-    inner: Asset,
-}
-
-#[pymethods]
-impl PyAsset {
-    #[new]
-    pub fn new(symbol: String, asset_class: String) -> PyResult<Self> {
-        let class = AssetClass::from_str(&asset_class).map_err(map_err)?;
-        let asset = Asset::new(symbol, class);
-        asset.validate().map_err(map_err)?;
-        Ok(Self { inner: asset })
-    }
-
-    #[getter]
-    pub fn symbol(&self) -> String {
-        self.inner.symbol().to_string()
-    }
-
-    #[getter]
-    pub fn asset_class(&self) -> String {
-        format!("{:?}", self.inner.asset_class())
-    }
-
-    #[getter]
-    pub fn expected_return(&self) -> f64 {
-        self.inner.expected_return()
-    }
-
-    #[getter]
-    pub fn volatility(&self) -> f64 {
-        self.inner.volatility()
-    }
-}
-
-#[pyclass(
-    name = "PyPortfolio",
-    module = "qaoa_portfolio_core",
-    skip_from_py_object
-)]
-#[derive(Clone, Default)]
-pub struct PyPortfolio {
-    assets: Vec<Asset>,
-}
-
-#[pymethods]
-impl PyPortfolio {
-    #[new]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn add_asset(&mut self, asset: &PyAsset) -> PyResult<()> {
-        // Push first and roll back on validation failure: one clone for the
-        // validating Portfolio instead of two full vector clones per call.
-        self.assets.push(asset.inner.clone());
-        if let Err(error) = Portfolio::new(self.assets.clone()) {
-            self.assets.pop();
-            return Err(map_err(error));
-        }
-        Ok(())
-    }
-
-    #[getter]
-    pub fn num_assets(&self) -> usize {
-        self.assets.len()
-    }
-
-    pub fn symbols(&self) -> Vec<String> {
-        self.assets
-            .iter()
-            .map(|asset| asset.symbol().to_string())
-            .collect()
-    }
-}
 
 #[pyclass(
     name = "PyReturnSeries",
@@ -313,8 +233,6 @@ pub fn solve_markowitz(
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     let py = module.py();
     module.add("OptimizationError", py.get_type::<OptimizationError>())?;
-    module.add_class::<PyAsset>()?;
-    module.add_class::<PyPortfolio>()?;
     module.add_class::<PyReturnSeries>()?;
     module.add_class::<PyQUBOMatrix>()?;
     module.add_class::<PyOptimizationResult>()?;

@@ -91,30 +91,7 @@ def test_markowitz_bridge_weights_sum_to_one():
     assert result["symbols"] == ["A", "B", "C"]
 
 
-def test_py_asset_and_portfolio_scaffold_smoke():
-    """Smoke coverage for the spec-mandated bridge scaffold classes."""
-    aapl = qaoa_portfolio_core.PyAsset("AAPL", "stock")
-    assert aapl.symbol == "AAPL"
-    assert aapl.asset_class == "Stock"
-    assert np.isfinite(aapl.expected_return)
-    assert np.isfinite(aapl.volatility)
-
-    with pytest.raises(ValueError):
-        qaoa_portfolio_core.PyAsset("AAPL", "not-an-asset-class")
-
-    portfolio = qaoa_portfolio_core.PyPortfolio()
-    portfolio.add_asset(aapl)
-    portfolio.add_asset(qaoa_portfolio_core.PyAsset("BTC-USD", "crypto"))
-    assert portfolio.num_assets == 2
-    assert portfolio.symbols() == ["AAPL", "BTC-USD"]
-
-    # Duplicate symbols are rejected and must not corrupt the portfolio
-    with pytest.raises(Exception):
-        portfolio.add_asset(qaoa_portfolio_core.PyAsset("AAPL", "stock"))
-    assert portfolio.num_assets == 2
-
-
-def test_py_return_series_scaffold_smoke():
+def test_py_return_series_statistics():
     returns = np.full((70, 2), 0.001)
     series = qaoa_portfolio_core.PyReturnSeries(["A", "B"], returns)
 
